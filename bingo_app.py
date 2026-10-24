@@ -129,6 +129,7 @@ st.markdown(
     .bubble.them { align-self: flex-start; background: #ffffff; border-bottom-left-radius: 3px; }
     .bubble .who { display: block; font-size: .7rem; font-weight: 800; color: #6b4a8f; }
     .chat-empty { margin: auto; color: #4b3668; font-size: .9rem; }
+    [data-testid="InputInstructions"] { display: none !important; }
 
     /* red "line complete" animations */
     @keyframes drawH  { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
