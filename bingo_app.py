@@ -113,11 +113,11 @@ st.markdown(
     @keyframes pop { 0%{transform:scale(.6)} 70%{transform:scale(1.25)} 100%{transform:scale(1)} }
 
     /* ---------- chat ---------- */
-    .st-key-chat_toggle { position: fixed; right: 1.1rem; bottom: 1.1rem; z-index: 10000; width: auto !important; }
+    .st-key-chat_toggle { position: fixed; left: 1.1rem; bottom: 1.1rem; z-index: 10000; width: auto !important; }
     .st-key-chat_toggle button { min-width: 3.6rem; height: 3.6rem; border-radius: 999px !important; padding: 0 .9rem !important;
         box-shadow: 0 6px 18px rgba(60, 20, 100, .35); }
     .st-key-chat_toggle button p { font-size: 1.35rem; }
-    .st-key-chat_panel { position: fixed; right: 1rem; bottom: 5.6rem; width: min(350px, calc(100vw - 2rem));
+    .st-key-chat_panel { position: fixed; left: 1rem; bottom: 5.6rem; width: min(350px, calc(100vw - 2rem));
         z-index: 10000; background: #ffffff; border: 1px solid #cdb6e0; border-radius: 18px;
         padding: .8rem .8rem .4rem; box-shadow: 0 12px 36px rgba(60, 20, 100, .35); }
     .chat-title { font-weight: 800; color: #5e2f99; margin-bottom: .4rem; }
