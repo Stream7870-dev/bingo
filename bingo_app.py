@@ -1,22 +1,3 @@
-"""
-Online 2-player Bingo with Streamlit
-------------------------------------
-Two modes:
-  1. Turn-based 5x5  - each player arranges 1-25 on their own board, players take
-                       turns calling a number, first to complete 5 lines wins.
-  2. Classic caller  - B-I-N-G-O cards (1-75), numbers are drawn one by one,
-                       players mark called numbers and claim BINGO.
-
-Players join the same room with a 5-character room code from different devices.
-Game state lives on the server (shared by every browser session) and each
-client polls it every 2 seconds.
-
-Run:   pip install "streamlit>=1.37"
-       streamlit run bingo_app.py
-Online: deploy (Streamlit Community Cloud, Render, a VPS...) or share your
-        machine with a tunnel (e.g. `cloudflared tunnel --url http://localhost:8501`).
-"""
-
 import html
 import random
 import secrets
@@ -29,11 +10,9 @@ import streamlit as st
 
 st.set_page_config(page_title="Bingo Online", page_icon="🎯", layout="centered")
 
-# Keep the 5x5 grid as a grid even on phones (Streamlit stacks columns by default).
 st.markdown(
     """
     <style>
-    /* ---------- Soft mauve animated background ---------- */
     .stApp {
         background: linear-gradient(135deg, #f4eaf8, #e0cbee, #c9aee0, #e9d8f4);
         background-size: 300% 300%;
@@ -41,7 +20,6 @@ st.markdown(
     }
     @keyframes drift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
 
-    /* floating glow orbs */
     .stApp::before, .stApp::after {
         content: ""; position: fixed; z-index: 0; pointer-events: none;
         width: 46vmax; height: 46vmax; border-radius: 50%; filter: blur(70px); opacity: .55;
@@ -56,7 +34,6 @@ st.markdown(
     [data-testid="stAppViewContainer"] { position: relative; z-index: 1; }
     [data-testid="stHeader"] { background: transparent; }
 
-    /* frosted glass panel */
     [data-testid="stMainBlockContainer"], .block-container {
         background: rgba(255, 255, 255, 0.62);
         border: 1px solid rgba(255, 255, 255, 0.7);
@@ -64,7 +41,6 @@ st.markdown(
         padding: 2rem 1.5rem 2rem !important; margin-top: 1rem; margin-bottom: 1rem;
     }
 
-    /* ---------- Clear, dark text ---------- */
     .stApp, .stApp p, .stApp label, .stApp span, .stApp li,
     .stApp h1, .stApp h2, .stApp h3, .stApp h4, [data-testid="stMarkdownContainer"] {
         color: #2a1740;
@@ -73,17 +49,14 @@ st.markdown(
     .stApp input { color: #2a1740 !important; background: #ffffff !important; }
     .stApp [data-baseweb="input"], .stApp [data-baseweb="base-input"] { background: #ffffff !important; border-radius: 10px; }
 
-    /* ---------- Keep the grid a grid, even on phones ---------- */
     div[data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 0.4rem !important; }
     div[data-testid="stColumn"], div[data-testid="column"] { min-width: 0 !important; }
 
-    /* ---------- Buttons / bingo cells ---------- */
     .stApp button { transition: transform .12s ease, box-shadow .12s ease, background .2s ease; }
     div[data-testid="stColumn"] button, div[data-testid="column"] button {
         padding: 0.25rem 0 !important; min-height: 2.9rem; font-weight: 800; font-size: 1.05rem;
         border-radius: 12px;
     }
-    /* normal / uncalled cells */
     button[data-testid="stBaseButton-secondary"], button[data-testid="baseButton-secondary"] {
         background: #ffffff; border: 2px solid #b79ad0; color: #2a1740;
     }
@@ -99,7 +72,6 @@ st.markdown(
     button[data-testid="stBaseButton-secondary"]:disabled p,
     button[data-testid="baseButton-secondary"]:disabled p { color: #4b3668 !important; }
 
-    /* crossed / marked cells and main action buttons */
     button[data-testid="stBaseButton-primary"], button[data-testid="baseButton-primary"] {
         background: linear-gradient(135deg, #8a4fc7, #5e2f99); border: 2px solid #4a2480; color: #ffffff;
         box-shadow: 0 4px 12px rgba(94, 47, 153, .35);
@@ -112,7 +84,6 @@ st.markdown(
     div[data-testid="stColumn"] button[data-testid="stBaseButton-primary"]:disabled p { animation: pop .35s ease; }
     @keyframes pop { 0%{transform:scale(.6)} 70%{transform:scale(1.25)} 100%{transform:scale(1)} }
 
-    /* ---------- chat ---------- */
     .st-key-chat_toggle { position: fixed; left: 1.1rem; bottom: 1.1rem; z-index: 10000; width: auto !important; }
     .st-key-chat_toggle button { min-width: 3.6rem; height: 3.6rem; border-radius: 999px !important; padding: 0 .9rem !important;
         box-shadow: 0 6px 18px rgba(60, 20, 100, .35); }
@@ -127,19 +98,27 @@ st.markdown(
         overflow-wrap: anywhere; color: #2a1740; }
     .bubble.me { align-self: flex-end; background: #d4b8ef; border-bottom-right-radius: 3px; }
     .bubble.them { align-self: flex-start; background: #ffffff; border-bottom-left-radius: 3px; }
-    .bubble .who { display: block; font-size: .7rem; font-weight: 800; cols .st-key-chat_panel [data-baseweb="input"]:focus-within {
-    border: none !important;
-    box-shadow: none !important;
-    outline: none !important;
+    .bubble .who { display: block; font-size: .7rem; font-weight: 800; color: #6b4a8f; }
+    .chat-empty { margin: auto; color: #4b3668; font-size: .9rem; }
+
+    [data-testid="InputInstructions"] { display: none !important; }
+    .st-key-chat_panel [data-testid="stTextInputRootElement"],
+    .st-key-chat_panel [data-baseweb="input"],
+    .st-key-chat_panel [data-baseweb="base-input"],
+    .st-key-chat_panel [data-testid="stTextInputRootElement"]:focus-within,
+    .st-key-chat_panel [data-baseweb="input"]:focus-within,
+    .st-key-chat_panel input,
+    .st-key-chat_panel input:focus {
+        border: none !important;
+        box-shadow: none !important;
+        outline: none !important;
     }
 
-    /* red "line complete" animations */
     @keyframes drawH  { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
     @keyframes drawV  { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0 0); } }
     @keyframes drawD  { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
     @keyframes drawD2 { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0 0 0 0); } }
 
-    /* ---------- win / lose effects ---------- */
     .result { text-align: center; font-size: 1.7rem; font-weight: 900; padding: .9rem 1rem;
         border-radius: 16px; margin: .5rem 0 1rem; }
     .stApp .result { color: #ffffff !important; }
@@ -159,7 +138,6 @@ st.markdown(
         animation: fadein 1.2s ease both; }
     @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 
-    /* big called number and BINGO letters */
     .big-number { font-size: 3.2rem; font-weight: 900; text-align: center; line-height: 1.1;
         color: #5e2f99; text-shadow: 0 3px 14px rgba(138, 79, 199, .45); animation: pop .5s ease; }
     .hdr { text-align: center; font-weight: 900; font-size: 1.2rem; color: #5e2f99; }
@@ -168,9 +146,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# --------------------------------------------------------------------------
-# Shared server-side store (one per server process, shared by all sessions)
-# --------------------------------------------------------------------------
+
 @st.cache_resource
 def get_store():
     return {"rooms": {}, "lock": threading.RLock()}
@@ -184,16 +160,13 @@ ROWS = [[r * 5 + c for c in range(5)] for r in range(5)]
 COLS = [[r * 5 + c for r in range(5)] for c in range(5)]
 DIAGS = [[0, 6, 12, 18, 24], [4, 8, 12, 16, 20]]
 LINES = ROWS + COLS + DIAGS
-FREE = 12  # centre cell index in classic mode
+FREE = 12
 MODE_TURN, MODE_CLASSIC = "turn", "classic"
-CODE_LEN = 5  # room code length (capital letters + digits)
-NAME_MIN, NAME_MAX = 3, 50  # allowed name length (letters, digits, anything)
+CODE_LEN = 5
+NAME_MIN, NAME_MAX = 3, 50
 MODE_LABEL = {MODE_TURN: "Turn-based 5×5", MODE_CLASSIC: "Classic caller"}
 
 
-# --------------------------------------------------------------------------
-# Game logic
-# --------------------------------------------------------------------------
 def classic_card():
     cols = [random.sample(range(1 + 15 * c, 16 + 15 * c), 5) for c in range(5)]
     board = [cols[c][r] for r in range(5) for c in range(5)]
@@ -216,11 +189,10 @@ def marked_idx(room, p):
 
 
 def fresh_state(room):
-    """(Re)initialise everything about a round except the players and settings."""
     room["round"] = room.get("round", 0) + 1
     room["called"] = []
-    room["last"] = None  # (number, player)
-    room["winner"] = None  # 0, 1 or "draw"
+    room["last"] = None
+    room["winner"] = None
     room["turn"] = random.choice([0, 1])
     room["last_draw"] = time.time()
     room["ready"] = [False, False]
@@ -252,19 +224,17 @@ def create_room(mode, name, opts):
 
 
 def join_room(code, name):
-    """Returns (player_index, error)."""
     with LOCK:
         room = ROOMS.get(code)
         if not room:
             return None, "Room not found. Check the code."
         names = room["names"]
-        for i in (0, 1):  # reconnect with the same name
+        for i in (0, 1):
             if names[i] and names[i].lower() == name.lower():
                 return i, None
         if names[1] is not None:
             return None, "This room is already full."
         names[1] = name
-        # start the game for the second player
         if room["mode"] == MODE_TURN:
             room["phase"] = "setup"
         else:
@@ -309,7 +279,6 @@ def call_number(code, p, board, idx):
 
 
 def draw_number(room):
-    """Caller draw (classic). Must be called with LOCK held."""
     pool = [n for n in range(1, 76) if n not in room["called"]]
     room["last_draw"] = time.time()
     if not pool:
@@ -335,7 +304,7 @@ def mark_cell(code, p, board, idx):
         if board[idx] not in room["called"]:
             return
         marks = room["marks"][p]
-        marks.symmetric_difference_update({idx})  # toggle
+        marks.symmetric_difference_update({idx})
 
 
 def claim_bingo(code, p):
@@ -362,7 +331,7 @@ def send_message(code, p, text):
         if room:
             chat = room.setdefault("chat", [])
             chat.append({"p": p, "text": text})
-            del chat[:-200]  # keep the last 200 messages
+            del chat[:-200]
 
 
 def rematch(code):
@@ -372,7 +341,6 @@ def rematch(code):
             fresh_state(room)
 
 
-# ---- board setup helpers (turn mode, per-client until "Ready") ------------
 def setup_place(key, idx):
     s = st.session_state[key]
     if s["board"][idx] == 0 and s["next"] <= 25:
@@ -397,9 +365,6 @@ def setup_undo(key):
         s["board"][s["board"].index(s["next"])] = 0
 
 
-# --------------------------------------------------------------------------
-# UI helpers
-# --------------------------------------------------------------------------
 def grid(prefix, labels, marked, enabled, on_click):
     for r in range(5):
         cols = st.columns(5)
@@ -421,8 +386,6 @@ RED = "#e11d48"
 
 
 def show_lines(prefix, marked):
-    """Inject CSS that draws an animated red line over every completed row,
-    column or diagonal of the grid whose buttons use keys `{prefix}_{i}`."""
     rules = []
     kinds = (
         [("row", ln) for ln in ROWS] + [("col", ln) for ln in COLS]
@@ -448,27 +411,25 @@ def show_lines(prefix, marked):
                     f"left: 50%; width: 5px; margin-left: -2.5px; background: {RED}; pointer-events: none; z-index: 5; "
                     f"{glow} animation: drawV .2s linear {delay} both; }}"
                 )
-            elif kind == "d1":  # top-left -> bottom-right
+            elif kind == "d1":
                 rules.append(
                     f'{sel}::before {{ content: ""; position: absolute; inset: -0.5rem -0.2rem; pointer-events: none; z-index: 5; '
                     f"background: linear-gradient(to top right, transparent calc(50% - 2.5px), {RED} calc(50% - 2.5px), "
                     f"{RED} calc(50% + 2.5px), transparent calc(50% + 2.5px)); "
                     f"{glow} animation: drawD .2s linear {delay} both; }}"
                 )
-            else:  # d2: top-right -> bottom-left
+            else:
                 rules.append(
                     f'{sel}::after {{ content: ""; position: absolute; inset: -0.5rem -0.2rem; pointer-events: none; z-index: 5; '
                     f"background: linear-gradient(to top left, transparent calc(50% - 2.5px), {RED} calc(50% - 2.5px), "
                     f"{RED} calc(50% + 2.5px), transparent calc(50% + 2.5px)); "
                     f"{glow} animation: drawD2 .2s linear {delay} both; }}"
                 )
-    # always render the element so the page layout stays stable between refreshes
-    st.markdown("<style>/* lines */ " + " ".join(rules) + "</style>", unsafe_allow_html=True)
+    st.markdown("<style>" + " ".join(rules) + "</style>", unsafe_allow_html=True)
 
 
 def show_result(kind, text, rkey):
-    """Big animated banner plus a full-screen effect (confetti for a win, soft dim for a loss)."""
-    rnd = random.Random(rkey)  # same pieces on every refresh, so the effect plays only once
+    rnd = random.Random(rkey)
     parts = [f'<div class="result {kind}">{text}</div>']
     if kind == "win":
         colors = ["#8a4fc7", "#f2a900", "#ff6fb1", "#5ec2b7", "#e11d48", "#ffffff"]
@@ -491,7 +452,6 @@ def toggle_chat():
 
 
 def chat_widget(code, p, room):
-    """WhatsApp-style floating chat: a round 💬 button that opens a chat panel."""
     ss = st.session_state
     chat, opp = room.get("chat", []), 1 - p
     is_open = ss.get("chat_open", False)
@@ -514,7 +474,7 @@ def chat_widget(code, p, room):
                 f'<div class="bubble {"me" if m["p"] == p else "them"}">'
                 + ('' if m["p"] == p else f'<span class="who">{html.escape(room["names"][m["p"]])}</span>')
                 + f'{html.escape(m["text"])}</div>'
-                for m in reversed(chat)  # column-reverse keeps the newest message at the bottom
+                for m in reversed(chat)
             ) or '<div class="chat-empty">No messages yet — say hi 👋</div>'
             st.markdown(
                 f'<div class="chat-title">💬 Chat with {html.escape(room["names"][opp])}</div>'
@@ -534,9 +494,6 @@ def leave():
         st.session_state.pop(k, None)
 
 
-# --------------------------------------------------------------------------
-# Lobby
-# --------------------------------------------------------------------------
 def lobby():
     st.title("🎯 Bingo Online")
     st.caption("2 players · play from different devices with a room code")
@@ -579,9 +536,6 @@ def lobby():
                 st.rerun()
 
 
-# --------------------------------------------------------------------------
-# Game screen (a fragment: refreshes itself every 2 s without a full rerun)
-# --------------------------------------------------------------------------
 @st.fragment(run_every=2)
 def game_view():
     ss = st.session_state
@@ -592,8 +546,7 @@ def game_view():
             leave()
             st.rerun(scope="app")
             return
-        room.setdefault("chat", [])  # rooms created before the chat update
-        # server-side auto draw, driven by whichever client polls first
+        room.setdefault("chat", [])
         if (room["mode"] == MODE_CLASSIC and room["phase"] == "playing"
                 and room["opts"].get("auto", 0) > 0
                 and time.time() - room["last_draw"] >= room["opts"]["auto"]):
@@ -606,12 +559,11 @@ def game_view():
     names = room["names"]
     rkey = f"{code}_{room['round']}"
 
-    st.markdown(f"### 🎯 Room `{code}` · {MODE_LABEL[room['mode']]}")
+    st.markdown("### 🎯 Bingo")
     st.write(f"**{names[p]}** (you) vs **{names[opp] or '… waiting'}**")
     if names[1]:
         chat_widget(code, p, room)
 
-    # ---- waiting -----------------------------------------------------------
     if room["phase"] == "waiting":
         st.info(f"Share the room code **{code}** with your friend and ask them to join.")
         if st.button("Leave room"):
@@ -619,7 +571,6 @@ def game_view():
             st.rerun(scope="app")
         return
 
-    # ---- turn mode: board setup -------------------------------------------
     if room["phase"] == "setup":
         if room["ready"][p]:
             st.success("You're ready! Waiting for your opponent to finish their board…")
@@ -648,7 +599,6 @@ def game_view():
     playing = room["phase"] == "playing"
     marked = marked_idx(room, p)
 
-    # ---- finished banner ---------------------------------------------------
     if room["phase"] == "finished":
         w = room["winner"]
         if w == "draw":
@@ -661,7 +611,6 @@ def game_view():
         else:
             show_result("lose", f"😞 {names[w]} wins this round", rkey)
 
-    # ---- TURN MODE ---------------------------------------------------------
     if room["mode"] == MODE_TURN:
         my_turn = playing and room["turn"] == p
         if playing:
@@ -677,7 +626,6 @@ def game_view():
         if called:
             st.caption("Called so far: " + ", ".join(map(str, called)))
 
-    # ---- CLASSIC MODE ------------------------------------------------------
     else:
         if called:
             n = called[-1]
@@ -705,7 +653,6 @@ def game_view():
         if st.button("📣 BINGO!", type="primary", disabled=not playing, use_container_width=True):
             claim_bingo(code, p)
 
-    # ---- footer ------------------------------------------------------------
     f1, f2 = st.columns(2)
     if room["phase"] == "finished" and p == 0:
         f1.button("🔁 Play again", on_click=rematch, args=(code,), use_container_width=True)
@@ -716,7 +663,6 @@ def game_view():
         st.rerun(scope="app")
 
 
-# --------------------------------------------------------------------------
 if st.session_state.get("code") in ROOMS:
     game_view()
 else:
