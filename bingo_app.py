@@ -415,9 +415,6 @@ def game_view():
         if room["last"]:
             n, who = room["last"]
             st.caption(f"Last call: **{n}** by {names[who]}")
-        c1, c2 = st.columns(2)
-        c1.metric("Your lines", f"{count_lines(marked)} / 5")
-        c2.metric(f"{names[opp]}'s lines", f"{count_lines(marked_idx(room, opp))} / 5")
         grid(f"play_{rkey}", [str(n) for n in board], marked,
              lambda i: my_turn and board[i] not in called,
              partial(call_number, code, p, board))
