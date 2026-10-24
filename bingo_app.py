@@ -111,6 +111,12 @@ st.markdown(
     div[data-testid="stColumn"] button[data-testid="stBaseButton-primary"]:disabled p { animation: pop .35s ease; }
     @keyframes pop { 0%{transform:scale(.6)} 70%{transform:scale(1.25)} 100%{transform:scale(1)} }
 
+    /* red "line complete" animations */
+    @keyframes drawH  { from { clip-path: inset(-14px 100% -14px -6px); } to { clip-path: inset(-14px -6px -14px -6px); } }
+    @keyframes drawV  { from { clip-path: inset(-6px -14px 100% -14px); } to { clip-path: inset(-6px -14px -6px -14px); } }
+    @keyframes drawD  { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+    @keyframes drawD2 { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0 0 0 0); } }
+
     /* big called number and BINGO letters */
     .big-number { font-size: 3.2rem; font-weight: 900; text-align: center; line-height: 1.1;
         color: #5e2f99; text-shadow: 0 3px 14px rgba(138, 79, 199, .45); animation: pop .5s ease; }
@@ -354,6 +360,55 @@ def grid(prefix, labels, marked, enabled, on_click):
                 )
 
 
+RED = "#e11d48"
+
+
+def show_lines(prefix, marked):
+    """Inject CSS that draws an animated red line over every completed row,
+    column or diagonal of the grid whose buttons use keys `{prefix}_{i}`."""
+    rules = []
+    kinds = (
+        [("row", ln) for ln in ROWS] + [("col", ln) for ln in COLS]
+        + [("d1", DIAGS[0]), ("d2", DIAGS[1])]
+    )
+    glow = f"filter: drop-shadow(0 0 4px {RED}cc);"
+    for kind, line in kinds:
+        if not all(i in marked for i in line):
+            continue
+        for pos, i in enumerate(line):
+            sel = f".st-key-{prefix}_{i}"
+            delay = f"{pos * 0.14:.2f}s"
+            rules.append(f"{sel}, {sel} button {{ position: relative; }}")
+            if kind == "row":
+                rules.append(
+                    f'{sel} button::after {{ content: ""; position: absolute; left: -0.2rem; right: -0.2rem; '
+                    f"top: 50%; height: 5px; margin-top: -2.5px; background: {RED}; pointer-events: none; z-index: 5; "
+                    f"{glow} animation: drawH .14s linear {delay} both; }}"
+                )
+            elif kind == "col":
+                rules.append(
+                    f'{sel} button::before {{ content: ""; position: absolute; top: -0.5rem; bottom: -0.5rem; '
+                    f"left: 50%; width: 5px; margin-left: -2.5px; background: {RED}; pointer-events: none; z-index: 5; "
+                    f"{glow} animation: drawV .14s linear {delay} both; }}"
+                )
+            elif kind == "d1":  # top-left -> bottom-right
+                rules.append(
+                    f'{sel}::before {{ content: ""; position: absolute; inset: -0.5rem -0.2rem; pointer-events: none; z-index: 5; '
+                    f"background: linear-gradient(to top right, transparent calc(50% - 2.5px), {RED} calc(50% - 2.5px), "
+                    f"{RED} calc(50% + 2.5px), transparent calc(50% + 2.5px)); "
+                    f"{glow} animation: drawD .14s linear {delay} both; }}"
+                )
+            else:  # d2: top-right -> bottom-left
+                rules.append(
+                    f'{sel}::after {{ content: ""; position: absolute; inset: -0.5rem -0.2rem; pointer-events: none; z-index: 5; '
+                    f"background: linear-gradient(to top left, transparent calc(50% - 2.5px), {RED} calc(50% - 2.5px), "
+                    f"{RED} calc(50% + 2.5px), transparent calc(50% + 2.5px)); "
+                    f"{glow} animation: drawD2 .14s linear {delay} both; }}"
+                )
+    # always render the element so the page layout stays stable between refreshes
+    st.markdown("<style>/* lines */ " + " ".join(rules) + "</style>", unsafe_allow_html=True)
+
+
 def leave():
     for k in ("code", "player"):
         st.session_state.pop(k, None)
@@ -492,6 +547,7 @@ def game_view():
         if room["last"]:
             n, who = room["last"]
             st.caption(f"Last call: **{n}** by {names[who]}")
+        show_lines(f"play_{rkey}", marked)
         grid(f"play_{rkey}", [str(n) for n in board], marked,
              lambda i: my_turn and board[i] not in called,
              partial(call_number, code, p, board))
@@ -517,6 +573,7 @@ def game_view():
         for c, ch in enumerate("BINGO"):
             hdr[c].markdown(f"<div class='hdr'>{ch}</div>", unsafe_allow_html=True)
         labels = ["★" if i == FREE else str(board[i]) for i in range(25)]
+        show_lines(f"play_{rkey}", marked)
         grid(f"play_{rkey}", labels, marked,
              lambda i: playing and i != FREE and board[i] in called,
              partial(mark_cell, code, p, board))
