@@ -17,6 +17,7 @@ Online: deploy (Streamlit Community Cloud, Render, a VPS...) or share your
         machine with a tunnel (e.g. `cloudflared tunnel --url http://localhost:8501`).
 """
 
+import html
 import random
 import secrets
 import string
@@ -57,8 +58,7 @@ st.markdown(
 
     /* frosted glass panel */
     [data-testid="stMainBlockContainer"], .block-container {
-        background: rgba(255, 255, 255, 0.50);
-        backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        background: rgba(255, 255, 255, 0.62);
         border: 1px solid rgba(255, 255, 255, 0.7);
         border-radius: 24px; box-shadow: 0 10px 40px rgba(90, 50, 130, 0.18);
         padding: 2rem 1.5rem 2rem !important; margin-top: 1rem; margin-bottom: 1rem;
@@ -111,6 +111,24 @@ st.markdown(
     button[data-testid="baseButton-primary"]:disabled { background: linear-gradient(135deg, #8a4fc7, #5e2f99); }
     div[data-testid="stColumn"] button[data-testid="stBaseButton-primary"]:disabled p { animation: pop .35s ease; }
     @keyframes pop { 0%{transform:scale(.6)} 70%{transform:scale(1.25)} 100%{transform:scale(1)} }
+
+    /* ---------- chat ---------- */
+    .st-key-chat_toggle { position: fixed; right: 1.1rem; bottom: 1.1rem; z-index: 10000; width: auto !important; }
+    .st-key-chat_toggle button { min-width: 3.6rem; height: 3.6rem; border-radius: 999px !important; padding: 0 .9rem !important;
+        box-shadow: 0 6px 18px rgba(60, 20, 100, .35); }
+    .st-key-chat_toggle button p { font-size: 1.35rem; }
+    .st-key-chat_panel { position: fixed; right: 1rem; bottom: 5.6rem; width: min(350px, calc(100vw - 2rem));
+        z-index: 10000; background: #ffffff; border: 1px solid #cdb6e0; border-radius: 18px;
+        padding: .8rem .8rem .4rem; box-shadow: 0 12px 36px rgba(60, 20, 100, .35); }
+    .chat-title { font-weight: 800; color: #5e2f99; margin-bottom: .4rem; }
+    .chat-scroll { display: flex; flex-direction: column-reverse; gap: 6px; height: 240px; overflow-y: auto;
+        padding: 8px; background: #efe6f7; border-radius: 12px; margin-bottom: .5rem; }
+    .bubble { max-width: 78%; padding: 6px 10px; border-radius: 12px; font-size: .95rem;
+        overflow-wrap: anywhere; color: #2a1740; }
+    .bubble.me { align-self: flex-end; background: #d4b8ef; border-bottom-right-radius: 3px; }
+    .bubble.them { align-self: flex-start; background: #ffffff; border-bottom-left-radius: 3px; }
+    .bubble .who { display: block; font-size: .7rem; font-weight: 800; color: #6b4a8f; }
+    .chat-empty { margin: auto; color: #4b3668; font-size: .9rem; }
 
     /* red "line complete" animations */
     @keyframes drawH  { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
@@ -224,7 +242,7 @@ def create_room(mode, name, opts):
             if (code not in ROOMS and any(ch.isdigit() for ch in code)
                     and any(ch.isalpha() for ch in code)):
                 break
-        room = {"code": code, "mode": mode, "names": [name, None], "opts": opts, "created": now}
+        room = {"code": code, "mode": mode, "names": [name, None], "opts": opts, "created": now, "chat": []}
         fresh_state(room)
         ROOMS[code] = room
         return code
@@ -330,6 +348,17 @@ def claim_bingo(code, p):
             room["winner"], room["phase"] = p, "finished"
         else:
             st.toast("Not a valid BINGO yet — keep marking! ❌")
+
+
+def send_message(code, p, text):
+    text = (text or "").strip()[:300]
+    if not text:
+        return
+    with LOCK:
+        room = ROOMS.get(code)
+        if room:
+            room["chat"].append({"p": p, "text": text})
+            del room["chat"][:-200]  # keep the last 200 messages
 
 
 def rematch(code):
@@ -449,6 +478,53 @@ def show_result(kind, text, rkey):
     st.markdown("".join(parts), unsafe_allow_html=True)
 
 
+def submit_chat(code, p):
+    send_message(code, p, st.session_state.get("chat_msg", ""))
+
+
+def toggle_chat():
+    st.session_state["chat_open"] = not st.session_state.get("chat_open", False)
+
+
+def chat_widget(code, p, room):
+    """WhatsApp-style floating chat: a round 💬 button that opens a chat panel."""
+    ss = st.session_state
+    chat, opp = room["chat"], 1 - p
+    is_open = ss.get("chat_open", False)
+    seen_key, toast_key = f"seen_{code}", f"toasted_{code}"
+    if is_open:
+        ss[seen_key] = ss[toast_key] = len(chat)
+    unread = sum(1 for m in chat[ss.get(seen_key, 0):] if m["p"] == opp)
+    if not is_open and len(chat) > ss.get(toast_key, 0):
+        new = [m for m in chat[ss.get(toast_key, 0):] if m["p"] == opp]
+        if new:
+            st.toast(f"💬 {room['names'][opp]}: {new[-1]['text'][:60]}")
+        ss[toast_key] = len(chat)
+
+    label = "✖" if is_open else ("💬" + (f" {unread}" if unread else ""))
+    st.button(label, key="chat_toggle", type="primary", on_click=toggle_chat)
+
+    if is_open:
+        with st.container(key="chat_panel"):
+            bubbles = "".join(
+                f'<div class="bubble {"me" if m["p"] == p else "them"}">'
+                + ('' if m["p"] == p else f'<span class="who">{html.escape(room["names"][m["p"]])}</span>')
+                + f'{html.escape(m["text"])}</div>'
+                for m in reversed(chat)  # column-reverse keeps the newest message at the bottom
+            ) or '<div class="chat-empty">No messages yet — say hi 👋</div>'
+            st.markdown(
+                f'<div class="chat-title">💬 Chat with {html.escape(room["names"][opp])}</div>'
+                f'<div class="chat-scroll">{bubbles}</div>',
+                unsafe_allow_html=True,
+            )
+            with st.form("chat_form", clear_on_submit=True, border=False):
+                c1, c2 = st.columns([5, 1])
+                c1.text_input("Message", key="chat_msg", placeholder="Type a message", max_chars=300,
+                              label_visibility="collapsed")
+                c2.form_submit_button("➤", type="primary", use_container_width=True,
+                                      on_click=submit_chat, args=(code, p))
+
+
 def leave():
     for k in ("code", "player"):
         st.session_state.pop(k, None)
@@ -527,6 +603,8 @@ def game_view():
 
     st.markdown(f"### 🎯 Room `{code}` · {MODE_LABEL[room['mode']]}")
     st.write(f"**{names[p]}** (you) vs **{names[opp] or '… waiting'}**")
+    if names[1]:
+        chat_widget(code, p, room)
 
     # ---- waiting -----------------------------------------------------------
     if room["phase"] == "waiting":
