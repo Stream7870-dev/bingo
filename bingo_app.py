@@ -112,10 +112,31 @@ st.markdown(
     @keyframes pop { 0%{transform:scale(.6)} 70%{transform:scale(1.25)} 100%{transform:scale(1)} }
 
     /* red "line complete" animations */
-    @keyframes drawH  { from { clip-path: inset(-14px 100% -14px -6px); } to { clip-path: inset(-14px -6px -14px -6px); } }
-    @keyframes drawV  { from { clip-path: inset(-6px -14px 100% -14px); } to { clip-path: inset(-6px -14px -6px -14px); } }
+    @keyframes drawH  { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+    @keyframes drawV  { from { clip-path: inset(0 0 100% 0); } to { clip-path: inset(0 0 0 0); } }
     @keyframes drawD  { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
     @keyframes drawD2 { from { clip-path: inset(0 0 0 100%); } to { clip-path: inset(0 0 0 0); } }
+
+    /* ---------- win / lose effects ---------- */
+    .result { text-align: center; font-size: 1.7rem; font-weight: 900; padding: .9rem 1rem;
+        border-radius: 16px; margin: .5rem 0 1rem; }
+    .stApp .result { color: #ffffff !important; }
+    .result.win { background: linear-gradient(120deg, #f2a900, #ff6fb1, #8a4fc7, #f2a900); background-size: 300% 300%;
+        animation: pop .6s ease, shimmer 4s linear infinite, pulse 1.6s ease-in-out .6s infinite; }
+    .result.lose { background: #6b5a80; animation: shake .6s ease; }
+    .result.draw { background: #9b87b8; animation: pop .5s ease; }
+    @keyframes shimmer { 0%{background-position:0% 50%} 100%{background-position:300% 50%} }
+    @keyframes pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
+    @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)} 40%{transform:translateX(9px)}
+        60%{transform:translateX(-6px)} 80%{transform:translateX(4px)} }
+    .fx { position: fixed; top: -40px; pointer-events: none; z-index: 9999; animation-timing-function: linear; animation-fill-mode: forwards; }
+    .confetti { width: 10px; height: 16px; border-radius: 2px; animation-name: fall; }
+    .raindrop { font-size: 1.3rem; opacity: .75; animation-name: fall; }
+    @keyframes fall { from { transform: translateY(0) rotate(0deg); opacity: 1; }
+        85% { opacity: 1; } to { transform: translateY(115vh) rotate(720deg); opacity: 0; } }
+    .dim { position: fixed; inset: 0; background: rgba(40, 20, 60, .22); pointer-events: none; z-index: 9998;
+        animation: fadein 1.2s ease both; }
+    @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 
     /* big called number and BINGO letters */
     .big-number { font-size: 3.2rem; font-weight: 900; text-align: center; line-height: 1.1;
@@ -371,42 +392,63 @@ def show_lines(prefix, marked):
         [("row", ln) for ln in ROWS] + [("col", ln) for ln in COLS]
         + [("d1", DIAGS[0]), ("d2", DIAGS[1])]
     )
-    glow = f"filter: drop-shadow(0 0 4px {RED}cc);"
+    glow = ""
     for kind, line in kinds:
         if not all(i in marked for i in line):
             continue
         for pos, i in enumerate(line):
             sel = f".st-key-{prefix}_{i}"
-            delay = f"{pos * 0.14:.2f}s"
+            delay = f"{pos * 0.2:.2f}s"
             rules.append(f"{sel}, {sel} button {{ position: relative; }}")
             if kind == "row":
                 rules.append(
                     f'{sel} button::after {{ content: ""; position: absolute; left: -0.2rem; right: -0.2rem; '
                     f"top: 50%; height: 5px; margin-top: -2.5px; background: {RED}; pointer-events: none; z-index: 5; "
-                    f"{glow} animation: drawH .14s linear {delay} both; }}"
+                    f"{glow} animation: drawH .2s linear {delay} both; }}"
                 )
             elif kind == "col":
                 rules.append(
                     f'{sel} button::before {{ content: ""; position: absolute; top: -0.5rem; bottom: -0.5rem; '
                     f"left: 50%; width: 5px; margin-left: -2.5px; background: {RED}; pointer-events: none; z-index: 5; "
-                    f"{glow} animation: drawV .14s linear {delay} both; }}"
+                    f"{glow} animation: drawV .2s linear {delay} both; }}"
                 )
             elif kind == "d1":  # top-left -> bottom-right
                 rules.append(
                     f'{sel}::before {{ content: ""; position: absolute; inset: -0.5rem -0.2rem; pointer-events: none; z-index: 5; '
                     f"background: linear-gradient(to top right, transparent calc(50% - 2.5px), {RED} calc(50% - 2.5px), "
                     f"{RED} calc(50% + 2.5px), transparent calc(50% + 2.5px)); "
-                    f"{glow} animation: drawD .14s linear {delay} both; }}"
+                    f"{glow} animation: drawD .2s linear {delay} both; }}"
                 )
             else:  # d2: top-right -> bottom-left
                 rules.append(
                     f'{sel}::after {{ content: ""; position: absolute; inset: -0.5rem -0.2rem; pointer-events: none; z-index: 5; '
                     f"background: linear-gradient(to top left, transparent calc(50% - 2.5px), {RED} calc(50% - 2.5px), "
                     f"{RED} calc(50% + 2.5px), transparent calc(50% + 2.5px)); "
-                    f"{glow} animation: drawD2 .14s linear {delay} both; }}"
+                    f"{glow} animation: drawD2 .2s linear {delay} both; }}"
                 )
     # always render the element so the page layout stays stable between refreshes
     st.markdown("<style>/* lines */ " + " ".join(rules) + "</style>", unsafe_allow_html=True)
+
+
+def show_result(kind, text, rkey):
+    """Big animated banner plus a full-screen effect (confetti for a win, rain for a loss)."""
+    rnd = random.Random(rkey)  # same pieces on every refresh, so the effect plays only once
+    parts = [f'<div class="result {kind}">{text}</div>']
+    if kind == "win":
+        colors = ["#8a4fc7", "#f2a900", "#ff6fb1", "#5ec2b7", "#e11d48", "#ffffff"]
+        for _ in range(60):
+            parts.append(
+                f'<div class="fx confetti" style="left:{rnd.randint(0, 98)}vw; background:{rnd.choice(colors)}; '
+                f'animation-duration:{rnd.uniform(2.5, 5):.1f}s; animation-delay:{rnd.uniform(0, 2.5):.1f}s;"></div>'
+            )
+    elif kind == "lose":
+        parts.append('<div class="dim"></div>')
+        for _ in range(35):
+            parts.append(
+                f'<div class="fx raindrop" style="left:{rnd.randint(0, 98)}vw; '
+                f'animation-duration:{rnd.uniform(2, 4):.1f}s; animation-delay:{rnd.uniform(0, 2.5):.1f}s;">💧</div>'
+            )
+    st.markdown("".join(parts), unsafe_allow_html=True)
 
 
 def leave():
@@ -529,14 +571,14 @@ def game_view():
     if room["phase"] == "finished":
         w = room["winner"]
         if w == "draw":
-            st.warning("🤝 It's a draw!")
+            show_result("draw", "🤝 It's a draw!", rkey)
         elif w == p:
-            st.success("🏆 BINGO! You win!")
+            show_result("win", "🏆 BINGO! You win!", rkey)
             if ss.get("celebrated") != rkey:
                 ss["celebrated"] = rkey
                 st.balloons()
         else:
-            st.error(f"😞 {names[w]} wins this round.")
+            show_result("lose", f"😞 {names[w]} wins this round", rkey)
 
     # ---- TURN MODE ---------------------------------------------------------
     if room["mode"] == MODE_TURN:
