@@ -31,13 +31,90 @@ st.set_page_config(page_title="Bingo Online", page_icon="🎯", layout="centered
 st.markdown(
     """
     <style>
-    div[data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 0.35rem !important; }
-    div[data-testid="stColumn"], div[data-testid="column"] { min-width: 0 !important; }
-    div[data-testid="stColumn"] button, div[data-testid="column"] button {
-        padding: 0.25rem 0 !important; min-height: 2.6rem; font-weight: 700;
+    /* ---------- Soft mauve animated background ---------- */
+    .stApp {
+        background: linear-gradient(135deg, #f4eaf8, #e0cbee, #c9aee0, #e9d8f4);
+        background-size: 300% 300%;
+        animation: drift 20s ease infinite;
     }
-    .big-number { font-size: 3rem; font-weight: 800; text-align: center; line-height: 1.1; }
-    .hdr { text-align: center; font-weight: 800; font-size: 1.1rem; }
+    @keyframes drift { 0%{background-position:0% 50%} 50%{background-position:100% 50%} 100%{background-position:0% 50%} }
+
+    /* floating glow orbs */
+    .stApp::before, .stApp::after {
+        content: ""; position: fixed; z-index: 0; pointer-events: none;
+        width: 46vmax; height: 46vmax; border-radius: 50%; filter: blur(70px); opacity: .55;
+    }
+    .stApp::before { top: -15vmax; left: -12vmax;
+        background: radial-gradient(circle, #d8b4f0 0%, transparent 70%); animation: float1 16s ease-in-out infinite; }
+    .stApp::after { bottom: -18vmax; right: -14vmax;
+        background: radial-gradient(circle, #b79ad8 0%, transparent 70%); animation: float2 19s ease-in-out infinite; }
+    @keyframes float1 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(8vmax,6vmax)} }
+    @keyframes float2 { 0%,100%{transform:translate(0,0)} 50%{transform:translate(-7vmax,-6vmax)} }
+
+    [data-testid="stAppViewContainer"] { position: relative; z-index: 1; }
+    [data-testid="stHeader"] { background: transparent; }
+
+    /* frosted glass panel */
+    [data-testid="stMainBlockContainer"], .block-container {
+        background: rgba(255, 255, 255, 0.50);
+        backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        border-radius: 24px; box-shadow: 0 10px 40px rgba(90, 50, 130, 0.18);
+        padding: 2rem 1.5rem 2rem !important; margin-top: 1rem; margin-bottom: 1rem;
+    }
+
+    /* ---------- Clear, dark text ---------- */
+    .stApp, .stApp p, .stApp label, .stApp span, .stApp li,
+    .stApp h1, .stApp h2, .stApp h3, .stApp h4, [data-testid="stMarkdownContainer"] {
+        color: #2a1740;
+    }
+    .stApp [data-testid="stCaptionContainer"], .stApp small { color: #4b3668 !important; }
+    .stApp input { color: #2a1740 !important; background: #ffffff !important; }
+    .stApp [data-baseweb="input"], .stApp [data-baseweb="base-input"] { background: #ffffff !important; border-radius: 10px; }
+
+    /* ---------- Keep the grid a grid, even on phones ---------- */
+    div[data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 0.4rem !important; }
+    div[data-testid="stColumn"], div[data-testid="column"] { min-width: 0 !important; }
+
+    /* ---------- Buttons / bingo cells ---------- */
+    .stApp button { transition: transform .12s ease, box-shadow .12s ease, background .2s ease; }
+    div[data-testid="stColumn"] button, div[data-testid="column"] button {
+        padding: 0.25rem 0 !important; min-height: 2.9rem; font-weight: 800; font-size: 1.05rem;
+        border-radius: 12px;
+    }
+    /* normal / uncalled cells */
+    button[data-testid="stBaseButton-secondary"], button[data-testid="baseButton-secondary"] {
+        background: #ffffff; border: 2px solid #b79ad0; color: #2a1740;
+    }
+    button[data-testid="stBaseButton-secondary"] p, button[data-testid="baseButton-secondary"] p { color: #2a1740 !important; }
+    button[data-testid="stBaseButton-secondary"]:hover:not(:disabled),
+    button[data-testid="baseButton-secondary"]:hover:not(:disabled) {
+        background: #f1e4fa; border-color: #7b4bb0; transform: translateY(-2px);
+        box-shadow: 0 6px 14px rgba(110, 60, 160, .25);
+    }
+    button:disabled { opacity: 1 !important; cursor: not-allowed; }
+    button[data-testid="stBaseButton-secondary"]:disabled,
+    button[data-testid="baseButton-secondary"]:disabled { background: #f6eefb; border-color: #cdb6e0; }
+    button[data-testid="stBaseButton-secondary"]:disabled p,
+    button[data-testid="baseButton-secondary"]:disabled p { color: #4b3668 !important; }
+
+    /* crossed / marked cells and main action buttons */
+    button[data-testid="stBaseButton-primary"], button[data-testid="baseButton-primary"] {
+        background: linear-gradient(135deg, #8a4fc7, #5e2f99); border: 2px solid #4a2480; color: #ffffff;
+        box-shadow: 0 4px 12px rgba(94, 47, 153, .35);
+    }
+    button[data-testid="stBaseButton-primary"] p, button[data-testid="baseButton-primary"] p { color: #ffffff !important; }
+    button[data-testid="stBaseButton-primary"]:hover:not(:disabled),
+    button[data-testid="baseButton-primary"]:hover:not(:disabled) { transform: translateY(-2px); filter: brightness(1.08); }
+    button[data-testid="stBaseButton-primary"]:disabled,
+    button[data-testid="baseButton-primary"]:disabled { background: linear-gradient(135deg, #8a4fc7, #5e2f99); }
+    div[data-testid="stColumn"] button[data-testid="stBaseButton-primary"]:disabled p { animation: pop .35s ease; }
+    @keyframes pop { 0%{transform:scale(.6)} 70%{transform:scale(1.25)} 100%{transform:scale(1)} }
+
+    /* big called number and BINGO letters */
+    .big-number { font-size: 3.2rem; font-weight: 900; text-align: center; line-height: 1.1;
+        color: #5e2f99; text-shadow: 0 3px 14px rgba(138, 79, 199, .45); animation: pop .5s ease; }
+    .hdr { text-align: center; font-weight: 900; font-size: 1.2rem; color: #5e2f99; }
     </style>
     """,
     unsafe_allow_html=True,
