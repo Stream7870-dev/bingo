@@ -7,6 +7,7 @@ import time
 from functools import partial
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 st.set_page_config(page_title="Bingo Online", page_icon="🎯", layout="centered")
 
@@ -84,12 +85,27 @@ st.markdown(
     div[data-testid="stColumn"] button[data-testid="stBaseButton-primary"]:disabled p { animation: pop .35s ease; }
     @keyframes pop { 0%{transform:scale(.6)} 70%{transform:scale(1.25)} 100%{transform:scale(1)} }
 
-    .st-key-chat_toggle { position: fixed; left: 1.1rem; bottom: 1.1rem; z-index: 10000; width: auto !important; }
+    .title-wrap { text-align: center; margin: 0 0 1.2rem; }
+    .title-deco { font-size: 1.3rem; letter-spacing: .5rem; animation: twinkle 2.4s ease-in-out infinite; }
+    .title-main { display: flex; justify-content: center; gap: .45rem; font-size: 3rem; font-weight: 900; line-height: 1.15; }
+    .stApp .title-main .l { display: inline-block; animation: bounce 2s ease-in-out infinite;
+        text-shadow: 0 3px 0 rgba(42, 23, 64, .25), 0 6px 14px rgba(138, 79, 199, .45); }
+    .stApp .title-main .l:nth-child(1) { color: #e11d48; animation-delay: 0s; }
+    .stApp .title-main .l:nth-child(2) { color: #f2a900; animation-delay: .15s; }
+    .stApp .title-main .l:nth-child(3) { color: #8a4fc7; animation-delay: .3s; }
+    .stApp .title-main .l:nth-child(4) { color: #2fa89b; animation-delay: .45s; }
+    .stApp .title-main .l:nth-child(5) { color: #ff6fb1; animation-delay: .6s; }
+    .title-sub { margin-top: .2rem; font-weight: 800; letter-spacing: .08rem; color: #5e2f99; }
+    @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+    @keyframes twinkle { 0%,100%{opacity:1; transform:scale(1)} 50%{opacity:.55; transform:scale(1.08)} }
+
+    .st-key-chat_toggle { position: fixed; left: 1.1rem; bottom: 1.1rem; z-index: 10001; width: auto !important; touch-action: none; }
     .st-key-chat_toggle button { min-width: 3.6rem; height: 3.6rem; border-radius: 999px !important; padding: 0 .9rem !important;
-        box-shadow: 0 6px 18px rgba(60, 20, 100, .35); }
+        box-shadow: 0 6px 18px rgba(60, 20, 100, .35); touch-action: none; cursor: grab; }
     .st-key-chat_toggle button p { font-size: 1.35rem; }
-    .st-key-chat_panel { position: fixed; left: 1rem; bottom: 5.6rem; width: min(350px, calc(100vw - 2rem));
-        z-index: 10000; background: #ffffff; border: 1px solid #cdb6e0; border-radius: 18px;
+    .st-key-chat_panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+        width: min(350px, calc(100vw - 2rem)); z-index: 10000; background: #ffffff;
+        border: 1px solid #cdb6e0; border-radius: 18px;
         padding: .8rem .8rem .4rem; box-shadow: 0 12px 36px rgba(60, 20, 100, .35); }
     .chat-title { font-weight: 800; color: #5e2f99; margin-bottom: .4rem; }
     .chat-scroll { display: flex; flex-direction: column-reverse; gap: 6px; height: 240px; overflow-y: auto;
@@ -165,6 +181,12 @@ MODE_TURN, MODE_CLASSIC = "turn", "classic"
 CODE_LEN = 5
 NAME_MIN, NAME_MAX = 3, 50
 MODE_LABEL = {MODE_TURN: "Turn-based 5×5", MODE_CLASSIC: "Classic caller"}
+PHASE_SUB = {
+    "waiting": "Waiting for your friend",
+    "setup": "Set up your board",
+    "playing": "Game on",
+    "finished": "Round over",
+}
 
 
 def classic_card():
@@ -365,6 +387,18 @@ def setup_undo(key):
         s["board"][s["board"].index(s["next"])] = 0
 
 
+def title_banner(sub):
+    letters = "".join(f'<span class="l">{ch}</span>' for ch in "BINGO")
+    st.markdown(
+        '<div class="title-wrap">'
+        '<div class="title-deco">🎉 ✨ 🎯 ✨ 🎉</div>'
+        f'<div class="title-main">{letters}</div>'
+        f'<div class="title-sub">✦ ━━ {html.escape(sub)} ━━ ✦</div>'
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
 def grid(prefix, labels, marked, enabled, on_click):
     for r in range(5):
         cols = st.columns(5)
@@ -451,6 +485,63 @@ def toggle_chat():
     st.session_state["chat_open"] = not st.session_state.get("chat_open", False)
 
 
+DRAG_JS = """
+<script>
+const P = window.parent;
+const D = P.document;
+function place(el, x, y) {
+  el.style.setProperty('left', x + 'px', 'important');
+  el.style.setProperty('top', y + 'px', 'important');
+  el.style.setProperty('right', 'auto', 'important');
+  el.style.setProperty('bottom', 'auto', 'important');
+}
+function setup() {
+  const el = D.querySelector('.st-key-chat_toggle');
+  if (!el) return;
+  const b = el.querySelector('button');
+  if (!b) return;
+  if (P.__chatPos && !el.__down) place(el, P.__chatPos.x, P.__chatPos.y);
+  if (el.__drag) return;
+  el.__drag = true;
+  let sx = 0, sy = 0, ox = 0, oy = 0, moved = false;
+  b.style.touchAction = 'none';
+  b.addEventListener('pointerdown', function (e) {
+    el.__down = true;
+    moved = false;
+    sx = e.clientX;
+    sy = e.clientY;
+    const r = el.getBoundingClientRect();
+    ox = r.left;
+    oy = r.top;
+    b.setPointerCapture(e.pointerId);
+  });
+  b.addEventListener('pointermove', function (e) {
+    if (!el.__down) return;
+    const dx = e.clientX - sx;
+    const dy = e.clientY - sy;
+    if (!moved && Math.hypot(dx, dy) < 6) return;
+    moved = true;
+    const x = Math.min(Math.max(0, ox + dx), P.innerWidth - el.offsetWidth);
+    const y = Math.min(Math.max(0, oy + dy), P.innerHeight - el.offsetHeight);
+    P.__chatPos = { x: x, y: y };
+    place(el, x, y);
+  });
+  b.addEventListener('pointerup', function () { el.__down = false; });
+  b.addEventListener('pointercancel', function () { el.__down = false; });
+  b.addEventListener('click', function (e) {
+    if (moved) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      moved = false;
+    }
+  }, true);
+}
+setInterval(setup, 400);
+setup();
+</script>
+"""
+
+
 def chat_widget(code, p, room):
     ss = st.session_state
     chat, opp = room.get("chat", []), 1 - p
@@ -467,6 +558,7 @@ def chat_widget(code, p, room):
 
     label = "✖" if is_open else ("💬" + (f" {unread}" if unread else ""))
     st.button(label, key="chat_toggle", type="primary", on_click=toggle_chat)
+    components.html(DRAG_JS, height=0)
 
     if is_open:
         with st.container(key="chat_panel"):
@@ -495,7 +587,7 @@ def leave():
 
 
 def lobby():
-    st.title("🎯 Bingo Online")
+    title_banner("Play with a friend")
     st.caption("2 players · play from different devices with a room code")
 
     tab_create, tab_join = st.tabs(["Create room", "Join room"])
@@ -559,7 +651,7 @@ def game_view():
     names = room["names"]
     rkey = f"{code}_{room['round']}"
 
-    st.markdown("### 🎯 Bingo")
+    title_banner(PHASE_SUB.get(room["phase"], "Let's play"))
     st.write(f"**{names[p]}** (you) vs **{names[opp] or '… waiting'}**")
     if names[1]:
         chat_widget(code, p, room)
