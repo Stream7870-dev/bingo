@@ -7,7 +7,7 @@ Two modes:
   2. Classic caller  - B-I-N-G-O cards (1-75), numbers are drawn one by one,
                        players mark called numbers and claim BINGO.
 
-Players join the same room with a 4-letter room code from different devices.
+Players join the same room with a 5-character room code from different devices.
 Game state lives on the server (shared by every browser session) and each
 client polls it every 2 seconds.
 
@@ -18,6 +18,7 @@ Online: deploy (Streamlit Community Cloud, Render, a VPS...) or share your
 """
 
 import random
+import secrets
 import string
 import threading
 import time
@@ -131,7 +132,6 @@ st.markdown(
         60%{transform:translateX(-6px)} 80%{transform:translateX(4px)} }
     .fx { position: fixed; top: -40px; pointer-events: none; z-index: 9999; animation-timing-function: linear; animation-fill-mode: forwards; }
     .confetti { width: 10px; height: 16px; border-radius: 2px; animation-name: fall; }
-    .raindrop { font-size: 1.3rem; opacity: .75; animation-name: fall; }
     @keyframes fall { from { transform: translateY(0) rotate(0deg); opacity: 1; }
         85% { opacity: 1; } to { transform: translateY(115vh) rotate(720deg); opacity: 0; } }
     .dim { position: fixed; inset: 0; background: rgba(40, 20, 60, .22); pointer-events: none; z-index: 9998;
@@ -165,6 +165,7 @@ DIAGS = [[0, 6, 12, 18, 24], [4, 8, 12, 16, 20]]
 LINES = ROWS + COLS + DIAGS
 FREE = 12  # centre cell index in classic mode
 MODE_TURN, MODE_CLASSIC = "turn", "classic"
+CODE_LEN = 5  # room code length (capital letters + digits)
 NAME_MIN, NAME_MAX = 3, 50  # allowed name length (letters, digits, anything)
 MODE_LABEL = {MODE_TURN: "Turn-based 5×5", MODE_CLASSIC: "Classic caller"}
 
@@ -217,9 +218,11 @@ def create_room(mode, name, opts):
         now = time.time()
         for c in [c for c, r in ROOMS.items() if now - r["created"] > 6 * 3600]:
             del ROOMS[c]
+        alphabet = string.ascii_uppercase + string.digits
         while True:
-            code = "".join(random.choices(string.ascii_uppercase, k=4))
-            if code not in ROOMS:
+            code = "".join(secrets.choice(alphabet) for _ in range(CODE_LEN))
+            if (code not in ROOMS and any(ch.isdigit() for ch in code)
+                    and any(ch.isalpha() for ch in code)):
                 break
         room = {"code": code, "mode": mode, "names": [name, None], "opts": opts, "created": now}
         fresh_state(room)
@@ -431,7 +434,7 @@ def show_lines(prefix, marked):
 
 
 def show_result(kind, text, rkey):
-    """Big animated banner plus a full-screen effect (confetti for a win, rain for a loss)."""
+    """Big animated banner plus a full-screen effect (confetti for a win, soft dim for a loss)."""
     rnd = random.Random(rkey)  # same pieces on every refresh, so the effect plays only once
     parts = [f'<div class="result {kind}">{text}</div>']
     if kind == "win":
@@ -443,11 +446,6 @@ def show_result(kind, text, rkey):
             )
     elif kind == "lose":
         parts.append('<div class="dim"></div>')
-        for _ in range(35):
-            parts.append(
-                f'<div class="fx raindrop" style="left:{rnd.randint(0, 98)}vw; '
-                f'animation-duration:{rnd.uniform(2, 4):.1f}s; animation-delay:{rnd.uniform(0, 2.5):.1f}s;">💧</div>'
-            )
     st.markdown("".join(parts), unsafe_allow_html=True)
 
 
@@ -491,8 +489,8 @@ def lobby():
 
     with tab_join:
         name = st.text_input(f"Your name ({NAME_MIN}-{NAME_MAX} characters)", key="j_name", max_chars=NAME_MAX)
-        code = st.text_input("Room code", max_chars=4, key="j_code").strip().upper()
-        if st.button("Join room", type="primary", disabled=not (len(name.strip()) >= NAME_MIN and len(code) == 4)):
+        code = st.text_input("Room code", max_chars=CODE_LEN, key="j_code").strip().upper()
+        if st.button("Join room", type="primary", disabled=not (len(name.strip()) >= NAME_MIN and len(code) == CODE_LEN)):
             p, err = join_room(code, name.strip())
             if err:
                 st.error(err)
