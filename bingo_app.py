@@ -127,12 +127,7 @@ st.markdown(
         overflow-wrap: anywhere; color: #2a1740; }
     .bubble.me { align-self: flex-end; background: #d4b8ef; border-bottom-right-radius: 3px; }
     .bubble.them { align-self: flex-start; background: #ffffff; border-bottom-left-radius: 3px; }
-    .bubble .who { display: block; font-size: .7rem; font-weight: 800; color: #6b4a8f; }
-    .chat-empty { margin: auto; color: #4b3668; font-size: .9rem; }
-    [data-testid="InputInstructions"] { display: none !important; }
-    .st-key-chat_panel [data-baseweb="input"],
-    .st-key-chat_panel [data-baseweb="base-input"],
-    .st-key-chat_panel [data-baseweb="input"]:focus-within {
+    .bubble .who { display: block; font-size: .7rem; font-weight: 800; cols .st-key-chat_panel [data-baseweb="input"]:focus-within {
     border: none !important;
     box-shadow: none !important;
     outline: none !important;
