@@ -357,8 +357,9 @@ def send_message(code, p, text):
     with LOCK:
         room = ROOMS.get(code)
         if room:
-            room["chat"].append({"p": p, "text": text})
-            del room["chat"][:-200]  # keep the last 200 messages
+            chat = room.setdefault("chat", [])
+            chat.append({"p": p, "text": text})
+            del chat[:-200]  # keep the last 200 messages
 
 
 def rematch(code):
@@ -489,7 +490,7 @@ def toggle_chat():
 def chat_widget(code, p, room):
     """WhatsApp-style floating chat: a round 💬 button that opens a chat panel."""
     ss = st.session_state
-    chat, opp = room["chat"], 1 - p
+    chat, opp = room.get("chat", []), 1 - p
     is_open = ss.get("chat_open", False)
     seen_key, toast_key = f"seen_{code}", f"toasted_{code}"
     if is_open:
@@ -588,6 +589,7 @@ def game_view():
             leave()
             st.rerun(scope="app")
             return
+        room.setdefault("chat", [])  # rooms created before the chat update
         # server-side auto draw, driven by whichever client polls first
         if (room["mode"] == MODE_CLASSIC and room["phase"] == "playing"
                 and room["opts"].get("auto", 0) > 0
