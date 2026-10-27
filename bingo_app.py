@@ -7,6 +7,8 @@ import secrets
 import string
 import threading
 import time
+import urllib.parse
+import urllib.request
 from functools import partial
 from pathlib import Path
 
@@ -103,14 +105,25 @@ st.markdown(
     @keyframes bounce { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
     @keyframes twinkle { 0%,100%{opacity:1; transform:scale(1)} 50%{opacity:.55; transform:scale(1.08)} }
 
-    .st-key-chat_toggle { position: fixed; left: 1.1rem; bottom: 1.1rem; z-index: 10001; width: auto !important; touch-action: none; }
-    .st-key-chat_toggle button { min-width: 3.6rem; height: 3.6rem; border-radius: 999px !important; padding: 0 .9rem !important;
-        box-shadow: 0 6px 18px rgba(60, 20, 100, .35); touch-action: none; cursor: grab; }
-    .st-key-chat_toggle button p { font-size: 1.35rem; }
-    .st-key-chat_panel { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    /* Floating round buttons (chat + music) */
+    .st-key-chat_toggle, .st-key-music_toggle {
+        position: fixed; left: 1.1rem; z-index: 10001; width: auto !important; touch-action: none;
+    }
+    .st-key-chat_toggle { bottom: 1.1rem; }
+    .st-key-music_toggle { bottom: 5.6rem; }
+    .st-key-chat_toggle button, .st-key-music_toggle button {
+        min-width: 3.6rem; height: 3.6rem; border-radius: 999px !important; padding: 0 .9rem !important;
+        box-shadow: 0 6px 18px rgba(60, 20, 100, .35); touch-action: none; cursor: grab;
+    }
+    .st-key-chat_toggle button p, .st-key-music_toggle button p { font-size: 1.35rem; }
+
+    /* Floating panels (chat + music) */
+    .st-key-chat_panel, .st-key-music_panel {
+        position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
         width: min(350px, calc(100vw - 2rem)); z-index: 10000; background: #ffffff;
         border: 1px solid #cdb6e0; border-radius: 18px;
-        padding: .8rem .8rem .4rem; box-shadow: 0 12px 36px rgba(60, 20, 100, .35); }
+        padding: .8rem .8rem .4rem; box-shadow: 0 12px 36px rgba(60, 20, 100, .35);
+    }
     .chat-title { font-weight: 800; color: #5e2f99; margin-bottom: .4rem; }
     .chat-scroll { display: flex; flex-direction: column-reverse; gap: 6px; height: 240px; overflow-y: auto;
         padding: 8px; background: #efe6f7; border-radius: 12px; margin-bottom: .5rem; }
@@ -121,6 +134,14 @@ st.markdown(
     .bubble .who { display: block; font-size: .7rem; font-weight: 800; color: #6b4a8f; }
     .chat-empty { margin: auto; color: #4b3668; font-size: .9rem; }
 
+    .now-playing { background: #efe6f7; border-radius: 12px; padding: .5rem .7rem; margin-bottom: .6rem;
+        font-size: .92rem; color: #2a1740; overflow-wrap: anywhere; }
+    .now-playing b { color: #5e2f99; }
+
+    /* Hidden audio player: stays alive while the music panel is closed */
+    .st-key-music_player { position: fixed; left: -1000px; top: 0; width: 320px; height: 220px;
+        pointer-events: none; opacity: 0; z-index: -1; }
+
     [data-testid="InputInstructions"] { display: none !important; }
     .st-key-chat_panel [data-testid="stTextInputRootElement"],
     .st-key-chat_panel [data-baseweb="input"],
@@ -128,7 +149,14 @@ st.markdown(
     .st-key-chat_panel [data-testid="stTextInputRootElement"]:focus-within,
     .st-key-chat_panel [data-baseweb="input"]:focus-within,
     .st-key-chat_panel input,
-    .st-key-chat_panel input:focus {
+    .st-key-chat_panel input:focus,
+    .st-key-music_panel [data-testid="stTextInputRootElement"],
+    .st-key-music_panel [data-baseweb="input"],
+    .st-key-music_panel [data-baseweb="base-input"],
+    .st-key-music_panel [data-testid="stTextInputRootElement"]:focus-within,
+    .st-key-music_panel [data-baseweb="input"]:focus-within,
+    .st-key-music_panel input,
+    .st-key-music_panel input:focus {
         border: none !important;
         box-shadow: none !important;
         outline: none !important;
@@ -379,20 +407,47 @@ def rematch(code):
             fresh_state(room)
 
 
-def extract_video_id(url):
-    m = re.search(r"(?:v=|youtu\.be/|embed/|shorts/|live/)([A-Za-z0-9_-]{11})", url or "")
-    return m.group(1) if m else None
+# ---------------------------------------------------------------- music
+
+def search_youtube(query):
+    """Return (video_id, title) for the top YouTube result, or (None, None)."""
+    try:
+        from yt_dlp import YoutubeDL
+        opts = {"quiet": True, "extract_flat": True, "skip_download": True}
+        with YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(f"ytsearch1:{query}", download=False)
+        entries = info.get("entries") or []
+        if entries:
+            return entries[0]["id"], entries[0].get("title") or query
+    except Exception:
+        pass
+    # Fallback if yt-dlp isn't installed or fails: scrape the results page
+    try:
+        url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote(query)
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en"})
+        page = urllib.request.urlopen(req, timeout=8).read().decode("utf-8", "ignore")
+        m = re.search(r'"videoId":"([A-Za-z0-9_-]{11})"', page)
+        if m:
+            return m.group(1), query
+    except Exception:
+        pass
+    return None, None
 
 
 def set_music(code, p):
-    vid = extract_video_id(st.session_state.get("music_url", ""))
+    query = st.session_state.get("music_query", "").strip()
+    if not query:
+        st.toast("Type a song name ❌")
+        return
+    vid, title = search_youtube(query)
     if not vid:
-        st.toast("Paste a valid YouTube link ❌")
+        st.toast("Couldn't find that song ❌")
         return
     with LOCK:
         room = ROOMS.get(code)
         if room:
-            room["music"] = {"id": vid, "by": p}
+            room["music"] = {"id": vid, "by": p, "title": title}
+    st.session_state["music_open"] = False
 
 
 def stop_music(code):
@@ -402,29 +457,53 @@ def stop_music(code):
             room["music"] = None
 
 
+def toggle_music():
+    st.session_state["music_open"] = not st.session_state.get("music_open", False)
+    st.session_state["chat_open"] = False
+
+
 def music_widget(code, p, room):
+    ss = st.session_state
     music = room.get("music")
-    with st.expander("🎵 Music player", expanded=bool(music)):
-        with st.form("music_form", clear_on_submit=True, border=False):
-            c1, c2 = st.columns([4, 2])
-            c1.text_input("YouTube link", key="music_url", placeholder="Paste a YouTube link",
-                          label_visibility="collapsed")
-            c2.form_submit_button("▶ Play", type="primary", use_container_width=True,
-                                  on_click=set_music, args=(code, p))
-        if music:
-            st.caption(f"Now playing · added by {room['names'][music['by']]}")
+    is_open = ss.get("music_open", False)
+
+    # Hidden player: always rendered while a song is set, so music keeps
+    # playing even when the music panel is closed.
+    if music:
+        with st.container(key="music_player"):
             components.html(
-                f'<iframe width="100%" height="200" '
-                f'src="https://www.youtube-nocookie.com/embed/{music["id"]}?autoplay=1&rel=0" '
-                f'allow="autoplay; encrypted-media" allowfullscreen '
-                f'style="border:0;border-radius:12px"></iframe>',
+                f'<iframe width="300" height="200" '
+                f'src="https://www.youtube-nocookie.com/embed/{music["id"]}?autoplay=1&rel=0&playsinline=1" '
+                f'allow="autoplay; encrypted-media" style="border:0"></iframe>',
                 height=210,
             )
-            st.button("⏹ Stop music", key="music_stop", on_click=stop_music, args=(code,),
-                      use_container_width=True)
-        else:
-            st.caption("Either player can paste a link. Both of you will hear it.")
 
+    label = "✖" if is_open else ("🎶" if music else "🎵")
+    st.button(label, key="music_toggle", type="primary", on_click=toggle_music)
+
+    if is_open:
+        with st.container(key="music_panel"):
+            st.markdown('<div class="chat-title">🎵 Play a song</div>', unsafe_allow_html=True)
+            if music:
+                st.markdown(
+                    f'<div class="now-playing">Now playing: <b>{html.escape(music.get("title") or "song")}</b>'
+                    f'<br>added by {html.escape(room["names"][music["by"]])}</div>',
+                    unsafe_allow_html=True,
+                )
+            with st.form("music_form", clear_on_submit=True, border=False):
+                c1, c2 = st.columns([4, 2])
+                c1.text_input("Song name", key="music_query", placeholder="Search a song name",
+                              label_visibility="collapsed")
+                c2.form_submit_button("🔍 Play", type="primary", use_container_width=True,
+                                      on_click=set_music, args=(code, p))
+            if music:
+                st.button("⏹ Stop music", key="music_stop", on_click=stop_music, args=(code,),
+                          use_container_width=True)
+            else:
+                st.caption("Either player can search a song. Both of you will hear it.")
+
+
+# ---------------------------------------------------------------- setup board
 
 def setup_place(key, idx):
     s = st.session_state[key]
@@ -591,24 +670,27 @@ def submit_chat(code, p):
 
 def toggle_chat():
     st.session_state["chat_open"] = not st.session_state.get("chat_open", False)
+    st.session_state["music_open"] = False
 
 
+# Makes both round buttons (chat + music) draggable, remembering their positions.
 DRAG_JS = """
 <script>
 const P = window.parent;
 const D = P.document;
+P.__btnPos = P.__btnPos || {};
 function place(el, x, y) {
   el.style.setProperty('left', x + 'px', 'important');
   el.style.setProperty('top', y + 'px', 'important');
   el.style.setProperty('right', 'auto', 'important');
   el.style.setProperty('bottom', 'auto', 'important');
 }
-function setup() {
-  const el = D.querySelector('.st-key-chat_toggle');
+function setupOne(cls) {
+  const el = D.querySelector('.' + cls);
   if (!el) return;
   const b = el.querySelector('button');
   if (!b) return;
-  if (P.__chatPos && !el.__down) place(el, P.__chatPos.x, P.__chatPos.y);
+  if (P.__btnPos[cls] && !el.__down) place(el, P.__btnPos[cls].x, P.__btnPos[cls].y);
   if (el.__drag) return;
   el.__drag = true;
   let sx = 0, sy = 0, ox = 0, oy = 0, moved = false;
@@ -631,7 +713,7 @@ function setup() {
     moved = true;
     const x = Math.min(Math.max(0, ox + dx), P.innerWidth - el.offsetWidth);
     const y = Math.min(Math.max(0, oy + dy), P.innerHeight - el.offsetHeight);
-    P.__chatPos = { x: x, y: y };
+    P.__btnPos[cls] = { x: x, y: y };
     place(el, x, y);
   });
   b.addEventListener('pointerup', function () { el.__down = false; });
@@ -643,6 +725,10 @@ function setup() {
       moved = false;
     }
   }, true);
+}
+function setup() {
+  setupOne('st-key-chat_toggle');
+  setupOne('st-key-music_toggle');
 }
 setInterval(setup, 400);
 setup();
@@ -690,7 +776,7 @@ def chat_widget(code, p, room):
 
 
 def leave():
-    for k in ("code", "player"):
+    for k in ("code", "player", "chat_open", "music_open"):
         st.session_state.pop(k, None)
 
 
