@@ -1,10 +1,13 @@
+import base64
 import html
+import json
 import random
 import secrets
 import string
 import threading
 import time
 from functools import partial
+from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
@@ -186,6 +189,13 @@ PHASE_SUB = {
     "setup": "Set up your board",
     "playing": "Game on",
     "finished": "Round over",
+}
+SOUND_DIR = Path(__file__).parent / "sounds"
+SOUND_FILES = {"win": "win.mp3", "lose": "lose.mp3", "draw": "draw.mp3"}
+TONES = {
+    "win": [[523, 0.0], [659, 0.15], [784, 0.3], [1047, 0.45], [1047, 0.7]],
+    "lose": [[392, 0.0], [349, 0.25], [294, 0.5], [196, 0.8]],
+    "draw": [[440, 0.0], [440, 0.3]],
 }
 
 
@@ -477,6 +487,51 @@ def show_result(kind, text, rkey):
     st.markdown("".join(parts), unsafe_allow_html=True)
 
 
+@st.cache_data
+def load_sound(name):
+    return base64.b64encode((SOUND_DIR / name).read_bytes()).decode()
+
+
+def play_sound(kind):
+    name = SOUND_FILES[kind]
+    if (SOUND_DIR / name).exists():
+        data = load_sound(name)
+        components.html(
+            f"""
+            <script>
+            const a = new window.parent.Audio("data:audio/mpeg;base64,{data}");
+            a.play();
+            </script>
+            """,
+            height=0,
+        )
+        return
+    components.html(
+        """
+        <script>
+        const P = window.parent;
+        const ctx = new (P.AudioContext || P.webkitAudioContext)();
+        ctx.resume();
+        const notes = %s;
+        notes.forEach(function (n) {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          const t = ctx.currentTime + n[1];
+          o.type = 'triangle';
+          o.frequency.value = n[0];
+          g.gain.setValueAtTime(0.25, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+          o.connect(g);
+          g.connect(ctx.destination);
+          o.start(t);
+          o.stop(t + 0.5);
+        });
+        </script>
+        """ % json.dumps(TONES[kind]),
+        height=0,
+    )
+
+
 def submit_chat(code, p):
     send_message(code, p, st.session_state.get("chat_msg", ""))
 
@@ -693,6 +748,10 @@ def game_view():
 
     if room["phase"] == "finished":
         w = room["winner"]
+        kind = "draw" if w == "draw" else ("win" if w == p else "lose")
+        if ss.get("sound_played") != rkey:
+            ss["sound_played"] = rkey
+            play_sound(kind)
         if w == "draw":
             show_result("draw", "🤝 It's a draw!", rkey)
         elif w == p:
