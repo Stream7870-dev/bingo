@@ -892,7 +892,8 @@ def game_view():
         kind = "draw" if w == "draw" else ("win" if w == p else "lose")
         if ss.get("sound_played") != rkey:
             ss["sound_played"] = rkey
-            play_sound(kind)
+            if not room.get("music"):
+                play_sound(kind)
         if w == "draw":
             show_result("draw", "🤝 It's a draw!", rkey)
         elif w == p:
