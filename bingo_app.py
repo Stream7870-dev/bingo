@@ -2,6 +2,7 @@ import base64
 import html
 import json
 import random
+import re
 import secrets
 import string
 import threading
@@ -225,7 +226,11 @@ def fresh_state(room):
     room["called"] = []
     room["last"] = None
     room["winner"] = None
-    room["turn"] = random.choice([0, 1])
+    if "starter" in room:
+        room["starter"] = 1 - room["starter"]
+    else:
+        room["starter"] = random.choice([0, 1])
+    room["turn"] = room["starter"]
     room["last_draw"] = time.time()
     room["ready"] = [False, False]
     if room["mode"] == MODE_TURN:
@@ -249,7 +254,8 @@ def create_room(mode, name, opts):
             if (code not in ROOMS and any(ch.isdigit() for ch in code)
                     and any(ch.isalpha() for ch in code)):
                 break
-        room = {"code": code, "mode": mode, "names": [name, None], "opts": opts, "created": now, "chat": []}
+        room = {"code": code, "mode": mode, "names": [name, None], "opts": opts, "created": now,
+                "chat": [], "music": None}
         fresh_state(room)
         ROOMS[code] = room
         return code
@@ -371,6 +377,53 @@ def rematch(code):
         room = ROOMS.get(code)
         if room:
             fresh_state(room)
+
+
+def extract_video_id(url):
+    m = re.search(r"(?:v=|youtu\.be/|embed/|shorts/|live/)([A-Za-z0-9_-]{11})", url or "")
+    return m.group(1) if m else None
+
+
+def set_music(code, p):
+    vid = extract_video_id(st.session_state.get("music_url", ""))
+    if not vid:
+        st.toast("Paste a valid YouTube link ❌")
+        return
+    with LOCK:
+        room = ROOMS.get(code)
+        if room:
+            room["music"] = {"id": vid, "by": p}
+
+
+def stop_music(code):
+    with LOCK:
+        room = ROOMS.get(code)
+        if room:
+            room["music"] = None
+
+
+def music_widget(code, p, room):
+    music = room.get("music")
+    with st.expander("🎵 Music player", expanded=bool(music)):
+        with st.form("music_form", clear_on_submit=True, border=False):
+            c1, c2 = st.columns([4, 2])
+            c1.text_input("YouTube link", key="music_url", placeholder="Paste a YouTube link",
+                          label_visibility="collapsed")
+            c2.form_submit_button("▶ Play", type="primary", use_container_width=True,
+                                  on_click=set_music, args=(code, p))
+        if music:
+            st.caption(f"Now playing · added by {room['names'][music['by']]}")
+            components.html(
+                f'<iframe width="100%" height="200" '
+                f'src="https://www.youtube-nocookie.com/embed/{music["id"]}?autoplay=1&rel=0" '
+                f'allow="autoplay; encrypted-media" allowfullscreen '
+                f'style="border:0;border-radius:12px"></iframe>',
+                height=210,
+            )
+            st.button("⏹ Stop music", key="music_stop", on_click=stop_music, args=(code,),
+                      use_container_width=True)
+        else:
+            st.caption("Either player can paste a link. Both of you will hear it.")
 
 
 def setup_place(key, idx):
@@ -694,11 +747,12 @@ def game_view():
             st.rerun(scope="app")
             return
         room.setdefault("chat", [])
+        room.setdefault("music", None)
         if (room["mode"] == MODE_CLASSIC and room["phase"] == "playing"
                 and room["opts"].get("auto", 0) > 0
                 and time.time() - room["last_draw"] >= room["opts"]["auto"]):
             draw_number(room)
-        snap = {k: (v.copy() if isinstance(v, (list, set)) else v) for k, v in room.items()}
+        snap = {k: (v.copy() if isinstance(v, (list, set, dict)) else v) for k, v in room.items()}
         snap["boards"] = [b.copy() if b else None for b in room["boards"]]
         snap["marks"] = [m.copy() for m in room["marks"]]
     room = snap
@@ -710,6 +764,7 @@ def game_view():
     st.write(f"**{names[p]}** (you) vs **{names[opp] or '… waiting'}**")
     if names[1]:
         chat_widget(code, p, room)
+        music_widget(code, p, room)
 
     if room["phase"] == "waiting":
         st.info(f"Share the room code **{code}** with your friend and ask them to join.")
