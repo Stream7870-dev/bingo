@@ -236,7 +236,9 @@ PHASE_SUB = {
     "finished": "Round over",
 }
 CLIPS_DIR = Path(__file__).parent / "Clips"
-WIN_CLIP = "win.png"   # shown only to the winner named Conqueror
+# Photos in the Clips folder; one is picked at random when Conqueror wins (missing files are skipped).
+# "Pic3.jpeg" is listed too in case "Pic.3.jpeg" was a typo.
+WIN_CLIPS = ["win.png", "Pic2.jpeg", "Pic.3.jpeg", "Pic3.jpeg"]
 SOUND_DIR = Path(__file__).parent / "sounds"
 SOUND_FILES = {"win": "win.mp3", "lose": "lose.mp3", "draw": "draw.mp3"}
 TONES = {
@@ -253,15 +255,19 @@ LOVE_NOTES = [
     "Just know I'm always going to be your biggest fan, my love. 💕",
     "You'll always be my favourite person to cheer for. ✨",
     "Did the most beautiful girl in the world just win this match? 💖",
+    "Okay, my love, you've earned a hug for that one. 🤗",
+    "Alright, my love, your reward is unlimited hugs from me.",
+    "Alright, miss talented, I'll be needing a hug from you after this.",
 ]
 
 
 def find_clip(filename):
-    """Find Clips/<filename> (ignores capital letters in the folder and file name, which matters on Linux hosts)."""
+    """Find Clips/<filename>. Ignores capital letters (matters on Linux hosts) and treats .jpg and .jpeg as the same."""
+    norm = lambda n: n.lower().replace(".jpeg", ".jpg")
     base = Path(__file__).parent
     for folder in [d for d in base.iterdir() if d.is_dir() and d.name.lower() == CLIPS_DIR.name.lower()]:
         for f in folder.iterdir():
-            if f.name.lower() == filename.lower():
+            if norm(f.name) == norm(filename):
                 return f
     return None
 
@@ -1128,8 +1134,9 @@ def game_view():
         elif w == p:
             show_result("win", "🏆 BINGO! You win!", rkey)
             if names[p].strip().lower() == SPECIAL_NAME:
-                clip = find_clip(WIN_CLIP)
-                if clip:
+                clips = list(dict.fromkeys(f for f in map(find_clip, WIN_CLIPS) if f))
+                if clips:
+                    clip = random.Random(f"clip_{rkey}").choice(clips)   # same photo all round, new pick next round
                     with st.container(key="win_clip"):
                         st.image(str(clip), width="stretch")
                 # same note on every refresh of this round, a new random one next round
