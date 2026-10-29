@@ -261,6 +261,7 @@ LOVE_NOTES = [
     "If I were there right now, I'd pull you into my arms and forget about everything else.",
     "My favourite place would probably be right next to you, with your hand in mine.",
     "I wish I could tuck you into my arms instead of just telling you to sleep well.",
+    "Just hoping my favourite person is having a beautiful day, because she makes mine beautiful just by being in it.",
 ]
 
 
