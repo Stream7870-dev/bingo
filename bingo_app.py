@@ -192,6 +192,10 @@ st.markdown(
         animation: fadein 1.2s ease both; }
     @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 
+    .st-key-win_clip img { border-radius: 16px; max-height: 340px; object-fit: contain;
+        box-shadow: 0 8px 24px rgba(94, 47, 153, .25); }
+    .st-key-win_clip { margin-bottom: .8rem; animation: fadein 1s ease .4s both; }
+
     /* Special note shown under the win banner */
     .love-note { text-align: center; font-size: 1.15rem; font-weight: 700; font-style: italic;
         background: linear-gradient(135deg, #ffe4f1, #f0e0ff); border: 1.5px solid #e7b8e0; border-radius: 16px;
@@ -231,6 +235,8 @@ PHASE_SUB = {
     "playing": "Game on",
     "finished": "Round over",
 }
+CLIPS_DIR = Path(__file__).parent / "Clips"
+WIN_CLIP = "win.png"   # shown only to the winner named Conqueror
 SOUND_DIR = Path(__file__).parent / "sounds"
 SOUND_FILES = {"win": "win.mp3", "lose": "lose.mp3", "draw": "draw.mp3"}
 TONES = {
@@ -248,6 +254,16 @@ LOVE_NOTES = [
     "You'll always be my favourite person to cheer for. ✨",
     "Did the most beautiful girl in the world just win this match? 💖",
 ]
+
+
+def find_clip(filename):
+    """Find Clips/<filename> (ignores capital letters in the folder and file name, which matters on Linux hosts)."""
+    base = Path(__file__).parent
+    for folder in [d for d in base.iterdir() if d.is_dir() and d.name.lower() == CLIPS_DIR.name.lower()]:
+        for f in folder.iterdir():
+            if f.name.lower() == filename.lower():
+                return f
+    return None
 
 
 def classic_card():
@@ -1112,6 +1128,10 @@ def game_view():
         elif w == p:
             show_result("win", "🏆 BINGO! You win!", rkey)
             if names[p].strip().lower() == SPECIAL_NAME:
+                clip = find_clip(WIN_CLIP)
+                if clip:
+                    with st.container(key="win_clip"):
+                        st.image(str(clip), width="stretch")
                 # same note on every refresh of this round, a new random one next round
                 note = random.Random(f"love_{rkey}").choice(LOVE_NOTES)
                 st.markdown(f'<div class="love-note">{html.escape(note)}</div>', unsafe_allow_html=True)
