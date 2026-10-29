@@ -258,6 +258,9 @@ LOVE_NOTES = [
     "Okay, my love, you've earned a hug for that one. 🤗",
     "Alright, my love, your reward is unlimited hugs from me.",
     "Alright, miss talented, I'll be needing a hug from you after this.",
+    "If I were there right now, I'd pull you into my arms and forget about everything else.",
+    "My favourite place would probably be right next to you, with your hand in mine.",
+    "I wish I could tuck you into my arms instead of just telling you to sleep well.",
 ]
 
 
