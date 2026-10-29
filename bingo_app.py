@@ -59,6 +59,11 @@ st.markdown(
     div[data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 0.4rem !important; }
     div[data-testid="stColumn"], div[data-testid="column"] { min-width: 0 !important; }
 
+    /* Invisible helper iframes (music player, drag script, sounds) should not leave blank gaps */
+    div[data-testid="stElementContainer"]:has(iframe[height="0"]) {
+        position: absolute; width: 0; height: 0; overflow: hidden; margin: 0; padding: 0;
+    }
+
     .stApp button { transition: transform .12s ease, box-shadow .12s ease, background .2s ease; }
     div[data-testid="stColumn"] button, div[data-testid="column"] button {
         padding: 0.25rem 0 !important; min-height: 2.9rem; font-weight: 800; font-size: 1.05rem;
@@ -134,13 +139,14 @@ st.markdown(
     .bubble .who { display: block; font-size: .7rem; font-weight: 800; color: #6b4a8f; }
     .chat-empty { margin: auto; color: #4b3668; font-size: .9rem; }
 
-    .now-playing { background: #efe6f7; border-radius: 12px; padding: .5rem .7rem; margin-bottom: .6rem;
-        font-size: .92rem; color: #2a1740; overflow-wrap: anywhere; }
-    .now-playing b { color: #5e2f99; }
-
-    /* Hidden audio player: stays alive while the music panel is closed */
-    .st-key-music_player { position: fixed; left: -1000px; top: 0; width: 320px; height: 220px;
-        pointer-events: none; opacity: 0; z-index: -1; }
+    /* Music panel: song profile card + results */
+    .st-key-music_panel { max-height: 85vh; overflow-y: auto; }
+    .song-card { display: flex; gap: .6rem; background: #efe6f7; border-radius: 12px;
+        padding: .5rem; margin-bottom: .6rem; align-items: center; }
+    .song-card img { width: 96px; height: 54px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
+    .song-info { min-width: 0; }
+    .song-title { font-weight: 800; font-size: .9rem; color: #2a1740; overflow-wrap: anywhere; line-height: 1.2; }
+    .song-meta { font-size: .75rem; color: #4b3668; overflow-wrap: anywhere; }
 
     [data-testid="InputInstructions"] { display: none !important; }
     .st-key-chat_panel [data-testid="stTextInputRootElement"],
@@ -186,6 +192,12 @@ st.markdown(
         animation: fadein 1.2s ease both; }
     @keyframes fadein { from { opacity: 0; } to { opacity: 1; } }
 
+    /* Special note shown under the win banner */
+    .love-note { text-align: center; font-size: 1.15rem; font-weight: 700; font-style: italic;
+        background: linear-gradient(135deg, #ffe4f1, #f0e0ff); border: 1.5px solid #e7b8e0; border-radius: 16px;
+        padding: .8rem 1rem; margin: 0 0 1rem; animation: fadein 1.2s ease .8s both; }
+    .stApp .love-note { color: #7a2e86 !important; }
+
     .big-number { font-size: 3.2rem; font-weight: 900; text-align: center; line-height: 1.1;
         color: #5e2f99; text-shadow: 0 3px 14px rgba(138, 79, 199, .45); animation: pop .5s ease; }
     .hdr { text-align: center; font-weight: 900; font-size: 1.2rem; color: #5e2f99; }
@@ -226,6 +238,16 @@ TONES = {
     "lose": [[392, 0.0], [349, 0.25], [294, 0.5], [196, 0.8]],
     "draw": [[440, 0.0], [440, 0.3]],
 }
+
+# Special messages: one is picked at random when the winner is named Conqueror
+# (any capitalisation). Edit the lines or the name here.
+SPECIAL_NAME = "conqueror"
+LOVE_NOTES = [
+    "You're my favourite player, win or lose. 💜",
+    "Just know I'm always going to be your biggest fan, my love. 💕",
+    "You'll always be my favourite person to cheer for. ✨",
+    "Did the most beautiful girl in the world just win this match? 💖",
+]
 
 
 def classic_card():
@@ -409,45 +431,98 @@ def rematch(code):
 
 # ---------------------------------------------------------------- music
 
-def search_youtube(query):
-    """Return (video_id, title) for the top YouTube result, or (None, None)."""
+def fmt_time(sec):
+    if sec is None:
+        return "--:--"
+    sec = int(max(0, sec))
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
+
+
+def thumb_url(vid):
+    return f"https://i.ytimg.com/vi/{vid}/mqdefault.jpg"
+
+
+def search_youtube(query, limit=8):
+    """Return a list of {id, title, channel, duration, thumb} dicts."""
+    results = []
     try:
         from yt_dlp import YoutubeDL
         opts = {"quiet": True, "extract_flat": True, "skip_download": True}
         with YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(f"ytsearch1:{query}", download=False)
-        entries = info.get("entries") or []
-        if entries:
-            return entries[0]["id"], entries[0].get("title") or query
+            info = ydl.extract_info(f"ytsearch{limit}:{query}", download=False)
+        for e in info.get("entries") or []:
+            if not e or not e.get("id"):
+                continue
+            results.append({
+                "id": e["id"],
+                "title": e.get("title") or query,
+                "channel": e.get("channel") or e.get("uploader") or "Unknown artist",
+                "duration": e.get("duration"),
+                "thumb": thumb_url(e["id"]),
+            })
+        if results:
+            return results
     except Exception:
         pass
-    # Fallback if yt-dlp isn't installed or fails: scrape the results page
+    # Fallback: scrape result page, then fetch title/channel through oEmbed
     try:
         url = "https://www.youtube.com/results?search_query=" + urllib.parse.quote(query)
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "en"})
         page = urllib.request.urlopen(req, timeout=8).read().decode("utf-8", "ignore")
-        m = re.search(r'"videoId":"([A-Za-z0-9_-]{11})"', page)
-        if m:
-            return m.group(1), query
+        ids = list(dict.fromkeys(re.findall(r'"videoId":"([A-Za-z0-9_-]{11})"', page)))[:6]
+        for vid in ids:
+            title, channel = query, "YouTube"
+            try:
+                o = "https://www.youtube.com/oembed?format=json&url=" + urllib.parse.quote(
+                    f"https://www.youtube.com/watch?v={vid}")
+                data = json.loads(urllib.request.urlopen(o, timeout=5).read().decode())
+                title, channel = data.get("title", title), data.get("author_name", channel)
+            except Exception:
+                pass
+            results.append({"id": vid, "title": title, "channel": channel,
+                            "duration": None, "thumb": thumb_url(vid)})
     except Exception:
         pass
-    return None, None
+    return results
 
 
-def set_music(code, p):
+def music_pos(m):
+    """Current playback position in seconds, computed from shared state."""
+    pos = m.get("pos", 0.0) + ((time.time() - m.get("ts", time.time())) if m.get("playing") else 0)
+    if m.get("duration"):
+        pos = min(pos, m["duration"])
+    return max(0.0, pos)
+
+
+def do_search():
     query = st.session_state.get("music_query", "").strip()
     if not query:
         st.toast("Type a song name ❌")
         return
-    vid, title = search_youtube(query)
-    if not vid:
+    try:
+        res = search_youtube(query)
+    except Exception as e:
+        st.toast(f"Search failed: {e}"[:120])
+        res = []
+    st.session_state["music_results"] = res
+    if not res:
         st.toast("Couldn't find that song ❌")
-        return
+
+
+def pick_song(code, p, item):
     with LOCK:
         room = ROOMS.get(code)
         if room:
-            room["music"] = {"id": vid, "by": p, "title": title}
-    st.session_state["music_open"] = False
+            old = room.get("music") or {}
+            room["music"] = {
+                "id": item["id"], "title": item["title"], "channel": item["channel"],
+                "duration": item.get("duration"), "thumb": item["thumb"], "by": p,
+                "playing": True, "pos": 0.0, "ts": time.time(),
+                "ver": old.get("ver", 0) + 1,
+            }
+    st.session_state["music_results"] = []
 
 
 def stop_music(code):
@@ -457,50 +532,183 @@ def stop_music(code):
             room["music"] = None
 
 
+def music_toggle_play(code):
+    with LOCK:
+        room = ROOMS.get(code)
+        m = room and room.get("music")
+        if not m:
+            return
+        pos = music_pos(m)
+        if not m["playing"] and m.get("duration") and pos >= m["duration"] - 1:
+            pos = 0.0
+            m["ver"] += 1          # song had ended: restart from the top
+        m["pos"], m["ts"], m["playing"] = pos, time.time(), not m["playing"]
+
+
+def music_seek(code, delta=None, to=None):
+    with LOCK:
+        room = ROOMS.get(code)
+        m = room and room.get("music")
+        if not m:
+            return
+        pos = to if to is not None else music_pos(m) + delta
+        if m.get("duration"):
+            pos = min(pos, max(0, m["duration"] - 1))
+        m["pos"], m["ts"] = max(0.0, pos), time.time()
+        m["ver"] += 1
+
+
 def toggle_music():
     st.session_state["music_open"] = not st.session_state.get("music_open", False)
     st.session_state["chat_open"] = False
+
+
+# The player lives in the parent page so controls can drive it without reloading.
+PLAYER_JS = """
+<script>
+const P = window.parent, D = P.document;
+const S = __STATE__;
+if (!P.__ytState) P.__ytState = {};
+if (!P.YT && !D.getElementById('yt-api')) {
+  const t = D.createElement('script');
+  t.id = 'yt-api';
+  t.src = 'https://www.youtube.com/iframe_api';
+  D.head.appendChild(t);
+}
+function ensure() {
+  if (P.__yt || !P.YT || !P.YT.Player) return;
+  let w = D.getElementById('yt-wrap');
+  if (!w) {
+    w = D.createElement('div');
+    w.id = 'yt-wrap';
+    w.style.cssText = 'position:fixed;left:-1000px;top:0;width:300px;height:200px;pointer-events:none;opacity:0;';
+    w.innerHTML = '<div id="yt-host"></div>';
+    D.body.appendChild(w);
+  }
+  P.__ytReady = false;
+  P.__yt = new P.YT.Player('yt-host', {
+    height: '200', width: '300', host: 'https://www.youtube-nocookie.com',
+    playerVars: { playsinline: 1, rel: 0, controls: 0 },
+    events: { onReady: function () { P.__ytReady = true; } }
+  });
+}
+function apply() {
+  ensure();
+  const pl = P.__yt;
+  if (!pl || !P.__ytReady) return false;
+  const st = P.__ytState;
+  if (!S.id) {
+    if (st.id) { pl.stopVideo(); }
+    P.__ytState = {};
+    return true;
+  }
+  if (st.id !== S.id || st.ver !== S.ver) {
+    if (S.playing) pl.loadVideoById({ videoId: S.id, startSeconds: S.pos });
+    else pl.cueVideoById({ videoId: S.id, startSeconds: S.pos });
+  } else if (st.playing !== S.playing) {
+    if (S.playing) pl.playVideo(); else pl.pauseVideo();
+  }
+  pl.setVolume(S.vol);
+  P.__ytState = { id: S.id, ver: S.ver, playing: S.playing };
+  return true;
+}
+let tries = 0;
+const iv = setInterval(function () {
+  if (apply() || ++tries > 40) clearInterval(iv);
+}, 500);
+</script>
+"""
+
+# Runs on the lobby screen so music never keeps playing after leaving a room.
+STOP_MUSIC_JS = """
+<script>
+const P = window.parent;
+try { if (P.__yt && P.__yt.stopVideo) P.__yt.stopVideo(); } catch (e) {}
+P.__ytState = {};
+</script>
+"""
 
 
 def music_widget(code, p, room):
     ss = st.session_state
     music = room.get("music")
     is_open = ss.get("music_open", False)
+    ss.setdefault("music_vol", 80)
+    vol = ss["music_vol"]
 
-    # Hidden player: always rendered while a song is set, so music keeps
-    # playing even when the music panel is closed.
+    # Player driver: always rendered so music keeps going when the panel is closed.
     if music:
-        with st.container(key="music_player"):
-            components.html(
-                f'<iframe width="300" height="200" '
-                f'src="https://www.youtube-nocookie.com/embed/{music["id"]}?autoplay=1&rel=0&playsinline=1" '
-                f'allow="autoplay; encrypted-media" style="border:0"></iframe>',
-                height=210,
-            )
+        state = {"id": music["id"], "ver": music["ver"], "playing": music["playing"],
+                 "pos": round(music_pos(music), 1), "vol": vol}
+    else:
+        state = {"id": None, "ver": 0, "playing": False, "pos": 0, "vol": vol}
+    components.html(PLAYER_JS.replace("__STATE__", json.dumps(state)), height=0)
 
     label = "✖" if is_open else ("🎶" if music else "🎵")
     st.button(label, key="music_toggle", type="primary", on_click=toggle_music)
 
-    if is_open:
-        with st.container(key="music_panel"):
-            st.markdown('<div class="chat-title">🎵 Play a song</div>', unsafe_allow_html=True)
-            if music:
-                st.markdown(
-                    f'<div class="now-playing">Now playing: <b>{html.escape(music.get("title") or "song")}</b>'
-                    f'<br>added by {html.escape(room["names"][music["by"]])}</div>',
-                    unsafe_allow_html=True,
-                )
-            with st.form("music_form", clear_on_submit=True, border=False):
-                c1, c2 = st.columns([4, 2])
-                c1.text_input("Song name", key="music_query", placeholder="Search a song name",
-                              label_visibility="collapsed")
-                c2.form_submit_button("🔍 Play", type="primary", use_container_width=True,
-                                      on_click=set_music, args=(code, p))
-            if music:
-                st.button("⏹ Stop music", key="music_stop", on_click=stop_music, args=(code,),
-                          use_container_width=True)
+    if not is_open:
+        return
+
+    with st.container(key="music_panel"):
+        st.markdown('<div class="chat-title">🎵 Music</div>', unsafe_allow_html=True)
+
+        if music:
+            pos = music_pos(music)
+            ended = bool(music.get("duration")) and pos >= music["duration"] - 1
+            if music["playing"] and ended:
+                status = "⏹ Ended"
+            elif music["playing"]:
+                status = "▶ Playing"
             else:
-                st.caption("Either player can search a song. Both of you will hear it.")
+                status = "⏸ Paused"
+            st.markdown(
+                f'<div class="song-card">'
+                f'<img src="{html.escape(music["thumb"])}" alt="">'
+                f'<div class="song-info">'
+                f'<div class="song-title">{html.escape(music["title"])}</div>'
+                f'<div class="song-meta">{html.escape(music["channel"])}</div>'
+                f'<div class="song-meta">{status} · {fmt_time(pos)} / {fmt_time(music.get("duration"))}</div>'
+                f'<div class="song-meta">added by {html.escape(room["names"][music["by"]])}</div>'
+                f'</div></div>',
+                unsafe_allow_html=True,
+            )
+            if music.get("duration"):
+                st.progress(min(1.0, pos / music["duration"]))
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.button("⏮", key="m_restart", on_click=music_seek, args=(code,), kwargs={"to": 0.0},
+                      use_container_width=True)
+            c2.button("⏪", key="m_back", on_click=music_seek, args=(code,), kwargs={"delta": -10},
+                      use_container_width=True)
+            c3.button("⏸" if music["playing"] else "▶", key="m_play", type="primary",
+                      on_click=music_toggle_play, args=(code,), use_container_width=True)
+            c4.button("⏩", key="m_fwd", on_click=music_seek, args=(code,), kwargs={"delta": 10},
+                      use_container_width=True)
+            c5.button("⏹", key="m_stop", on_click=stop_music, args=(code,), use_container_width=True)
+            st.slider("🔊 Volume (just for you)", 0, 100, value=ss["music_vol"], key="music_vol_w",
+                      on_change=lambda: ss.__setitem__("music_vol", ss["music_vol_w"]))
+
+        with st.form("music_form", clear_on_submit=True, border=False):
+            c1, c2 = st.columns([4, 2])
+            c1.text_input("Song name", key="music_query", placeholder="Search a song or artist",
+                          label_visibility="collapsed")
+            c2.form_submit_button("🔍 Search", type="primary", use_container_width=True,
+                                  on_click=do_search)
+
+        results = ss.get("music_results") or []
+        for i, r in enumerate(results):
+            a, b, c = st.columns([2, 5, 2])
+            a.markdown(f'<img src="{html.escape(r["thumb"])}" style="width:100%;border-radius:8px">',
+                       unsafe_allow_html=True)
+            b.markdown(
+                f'<div class="song-title">{html.escape(r["title"])}</div>'
+                f'<div class="song-meta">{html.escape(r["channel"])} · {fmt_time(r.get("duration"))}</div>',
+                unsafe_allow_html=True,
+            )
+            c.button("▶", key=f"pick_{i}", type="primary", on_click=pick_song,
+                     args=(code, p, r), use_container_width=True)
+        if not music and not results:
+            st.caption("Search a song, pick one from the list. Both of you will hear it.")
 
 
 # ---------------------------------------------------------------- setup board
@@ -605,6 +813,7 @@ def show_lines(prefix, marked):
 
 
 def show_result(kind, text, rkey):
+    """`text` must already be HTML-safe (escape any player names before passing them in)."""
     rnd = random.Random(rkey)
     parts = [f'<div class="result {kind}">{text}</div>']
     if kind == "win":
@@ -776,11 +985,12 @@ def chat_widget(code, p, room):
 
 
 def leave():
-    for k in ("code", "player", "chat_open", "music_open"):
+    for k in ("code", "player", "chat_open", "music_open", "music_results"):
         st.session_state.pop(k, None)
 
 
 def lobby():
+    components.html(STOP_MUSIC_JS, height=0)
     title_banner("Play with a friend")
     st.caption("2 players · play from different devices with a room code")
 
@@ -834,6 +1044,8 @@ def game_view():
             return
         room.setdefault("chat", [])
         room.setdefault("music", None)
+        if room["music"] and not {"id", "ver", "pos", "ts", "playing", "thumb", "channel", "by"} <= room["music"].keys():
+            room["music"] = None   # leftover from an older version of the app
         if (room["mode"] == MODE_CLASSIC and room["phase"] == "playing"
                 and room["opts"].get("auto", 0) > 0
                 and time.time() - room["last_draw"] >= room["opts"]["auto"]):
@@ -892,17 +1104,22 @@ def game_view():
         kind = "draw" if w == "draw" else ("win" if w == p else "lose")
         if ss.get("sound_played") != rkey:
             ss["sound_played"] = rkey
-            if not room.get("music"):
+            m = room.get("music")
+            if not (m and m.get("playing")):
                 play_sound(kind)
         if w == "draw":
             show_result("draw", "🤝 It's a draw!", rkey)
         elif w == p:
             show_result("win", "🏆 BINGO! You win!", rkey)
+            if names[p].strip().lower() == SPECIAL_NAME:
+                # same note on every refresh of this round, a new random one next round
+                note = random.Random(f"love_{rkey}").choice(LOVE_NOTES)
+                st.markdown(f'<div class="love-note">{html.escape(note)}</div>', unsafe_allow_html=True)
             if ss.get("celebrated") != rkey:
                 ss["celebrated"] = rkey
                 st.balloons()
         else:
-            show_result("lose", f"😞 {names[w]} wins this round", rkey)
+            show_result("lose", f"😞 {html.escape(names[w])} wins this round", rkey)
 
     if room["mode"] == MODE_TURN:
         my_turn = playing and room["turn"] == p
