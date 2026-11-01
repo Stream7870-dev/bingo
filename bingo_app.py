@@ -236,9 +236,11 @@ PHASE_SUB = {
     "finished": "Round over",
 }
 CLIPS_DIR = Path(__file__).parent / "Clips"
-# Photos in the Clips folder; one is picked at random when Conqueror wins (missing files are skipped).
-# "Pic3.jpeg" is listed too in case "Pic.3.jpeg" was a typo.
-WIN_CLIPS = ["win.png", "Pic2.jpeg", "Pic.3.jpeg", "Pic3.jpeg"]
+# Photos in the Clips folder (missing files are skipped).
+# NOTE_PHOTOS pairs a message number (1 = first line in LOVE_NOTES) with a photo that is shown ONLY with that message.
+# Every other message gets one of OTHER_CLIPS at random. ("Pic3.jpeg" is listed in case "Pic.3.jpeg" was a typo.)
+NOTE_PHOTOS = {7: "Pic2.jpeg"}
+OTHER_CLIPS = ["win.png", "Pic.3.jpeg", "Pic3.jpeg"]
 SOUND_DIR = Path(__file__).parent / "sounds"
 SOUND_FILES = {"win": "win.mp3", "lose": "lose.mp3", "draw": "draw.mp3"}
 TONES = {
@@ -264,6 +266,7 @@ LOVE_NOTES = [
     "Just hoping my favourite person is having a beautiful day, because she makes mine beautiful just by being in it.",
     "There's a kind of beauty in you that goes far beyond what eyes can see, my love. ❤️",
     "You have no idea how many little things about you make my world a more meaningful place.",
+    "I hope you never stop becoming who you are. Never let the world make you smaller than the person you were meant to become.",
 ]
 
 
@@ -276,6 +279,18 @@ def find_clip(filename):
             if norm(f.name) == norm(filename):
                 return f
     return None
+
+
+def pick_win_extras(rkey):
+    """Pick this round's message and its photo (same result on every refresh, new pick each round)."""
+    idx = random.Random(f"love_{rkey}").randrange(len(LOVE_NOTES))
+    paired = NOTE_PHOTOS.get(idx + 1)
+    clip = find_clip(paired) if paired else None
+    if clip is None:
+        others = list(dict.fromkeys(f for f in map(find_clip, OTHER_CLIPS) if f))
+        if others:
+            clip = random.Random(f"clip_{rkey}").choice(others)
+    return LOVE_NOTES[idx], clip
 
 
 def classic_card():
@@ -1140,13 +1155,10 @@ def game_view():
         elif w == p:
             show_result("win", "🏆 BINGO! You win!", rkey)
             if names[p].strip().lower() == SPECIAL_NAME:
-                clips = list(dict.fromkeys(f for f in map(find_clip, WIN_CLIPS) if f))
-                if clips:
-                    clip = random.Random(f"clip_{rkey}").choice(clips)   # same photo all round, new pick next round
+                note, clip = pick_win_extras(rkey)
+                if clip:
                     with st.container(key="win_clip"):
                         st.image(str(clip), width="stretch")
-                # same note on every refresh of this round, a new random one next round
-                note = random.Random(f"love_{rkey}").choice(LOVE_NOTES)
                 st.markdown(f'<div class="love-note">{html.escape(note)}</div>', unsafe_allow_html=True)
             if ss.get("celebrated") != rkey:
                 ss["celebrated"] = rkey
