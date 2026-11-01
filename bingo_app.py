@@ -266,7 +266,6 @@ LOVE_NOTES = [
     "Just hoping my favourite person is having a beautiful day, because she makes mine beautiful just by being in it.",
     "There's a kind of beauty in you that goes far beyond what eyes can see, my love. ❤️",
     "You have no idea how many little things about you make my world a more meaningful place.",
-    "I hope you never stop becoming who you are. Never let the world make you smaller than the person you were meant to become.",
 ]
 
 
