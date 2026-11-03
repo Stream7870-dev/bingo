@@ -267,7 +267,7 @@ LOVE_NOTES = [
     "There's a kind of beauty in you that goes far beyond what eyes can see, my love. ❤️",
     "You have no idea how many little things about you make my world a more meaningful place.",
     "You are such a beautiful combination of courage and tenderness, my love. So strong in spirit, so gentle at heart, and so wonderfully adorable in all the little ways that make you, you. ❤️",
-    "I lost the game, so naturally, I'm claiming extra hugs and kisses as compensation.",
+    "I lost the game, so naturally, I'm claiming extra hugs as compensation.",
 ]
 
 
