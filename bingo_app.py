@@ -196,10 +196,6 @@ st.markdown(
         box-shadow: 0 8px 24px rgba(94, 47, 153, .25); }
     .st-key-win_clip { margin-bottom: .8rem; animation: fadein 1s ease .4s both; }
 
-    .st-key-lose_clip { margin-bottom: .8rem; animation: fadein 1s ease .3s both; }
-    .st-key-lose_clip video { width: 100%; max-height: 420px; border-radius: 16px; background: #000;
-        box-shadow: 0 8px 24px rgba(60, 20, 100, .3); }
-
     /* Special note shown under the win banner */
     .love-note { text-align: center; font-size: 1.15rem; font-weight: 700; font-style: italic;
         background: linear-gradient(135deg, #ffe4f1, #f0e0ff); border: 1.5px solid #e7b8e0; border-radius: 16px;
@@ -245,7 +241,6 @@ CLIPS_DIR = Path(__file__).parent / "Clips"
 # Every other message gets one of OTHER_CLIPS at random. ("Pic3.jpeg" is listed in case "Pic.3.jpeg" was a typo.)
 NOTE_PHOTOS = {7: "Pic2.jpeg", 15: "Pic2.jpeg"}
 OTHER_CLIPS = ["win.png", "Pic.3.jpeg", "Pic3.jpeg"]
-LOSE_VIDEO = "lose1.mp4"   # Clips/lose1.mp4 plays for the player who loses
 SOUND_DIR = Path(__file__).parent / "sounds"
 SOUND_FILES = {"win": "win.mp3", "lose": "lose.mp3", "draw": "draw.mp3"}
 TONES = {
@@ -1151,13 +1146,10 @@ def game_view():
     if room["phase"] == "finished":
         w = room["winner"]
         kind = "draw" if w == "draw" else ("win" if w == p else "lose")
-        lose_clip = find_clip(LOSE_VIDEO) if kind == "lose" else None
         if ss.get("sound_played") != rkey:
             ss["sound_played"] = rkey
             m = room.get("music")
-            # The lose video has its own sound, so the lose tone is skipped when the video exists
-            # (it still plays as a fallback if the video file is missing).
-            if not (m and m.get("playing")) and not lose_clip:
+            if not (m and m.get("playing")):
                 play_sound(kind)
         if w == "draw":
             show_result("draw", "🤝 It's a draw!", rkey)
@@ -1174,9 +1166,6 @@ def game_view():
                 st.balloons()
         else:
             show_result("lose", f"😞 {html.escape(names[w])} wins this round", rkey)
-            if lose_clip:
-                with st.container(key="lose_clip"):
-                    st.video(str(lose_clip), autoplay=True)
 
     if room["mode"] == MODE_TURN:
         my_turn = playing and room["turn"] == p
