@@ -239,7 +239,7 @@ CLIPS_DIR = Path(__file__).parent / "Clips"
 # Photos in the Clips folder (missing files are skipped).
 # NOTE_PHOTOS pairs a message number (1 = first line in LOVE_NOTES) with a photo that is shown ONLY with that message.
 # Every other message gets one of OTHER_CLIPS at random. ("Pic3.jpeg" is listed in case "Pic.3.jpeg" was a typo.)
-NOTE_PHOTOS = {7: "Pic2.jpeg"}
+NOTE_PHOTOS = {7: "Pic2.jpeg", 15: "Pic2.jpeg"}
 OTHER_CLIPS = ["win.png", "Pic.3.jpeg", "Pic3.jpeg"]
 SOUND_DIR = Path(__file__).parent / "sounds"
 SOUND_FILES = {"win": "win.mp3", "lose": "lose.mp3", "draw": "draw.mp3"}
@@ -266,6 +266,8 @@ LOVE_NOTES = [
     "Just hoping my favourite person is having a beautiful day, because she makes mine beautiful just by being in it.",
     "There's a kind of beauty in you that goes far beyond what eyes can see, my love. ❤️",
     "You have no idea how many little things about you make my world a more meaningful place.",
+    "You are such a beautiful combination of courage and tenderness, my love. So strong in spirit, so gentle at heart, and so wonderfully adorable in all the little ways that make you, you. ❤️",
+    "I lost the game, so naturally, I'm claiming extra hugs and kisses as compensation.",
 ]
 
 
