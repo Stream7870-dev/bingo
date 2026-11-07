@@ -273,6 +273,7 @@ LOVE_NOTES = [
     "You have no idea how many little things about you make my world a more meaningful place.",
     "You are such a beautiful combination of courage and tenderness, my love. So strong in spirit, so gentle at heart, and so wonderfully adorable in all the little ways that make you, you. ❤️",
     "I lost the game, so naturally, I'm claiming extra hugs as compensation.",
+    "You are a little bit of sunshine, a little bit of magic, a whole lot of courage and an absolute sweetheart.",
 ]
 
 
