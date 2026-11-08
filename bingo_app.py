@@ -257,6 +257,9 @@ TONES = {
 # Special messages: one is picked at random when the winner is named Conqueror
 # (any capitalisation). Edit the lines or the name here.
 SPECIAL_NAME = "conqueror"
+# On her first wins in a room these messages are shown in this order (message numbers, 1 = first line below);
+# after that every win picks a message at random from the whole list. Use [] to turn this off.
+FIRST_NOTES = [17, 18]
 LOVE_NOTES = [
     "You're my favourite player, win or lose. 💜",
     "Just know I'm always going to be your biggest fan, my love. 💕",
@@ -290,9 +293,25 @@ def find_clip(filename):
     return None
 
 
-def pick_win_extras(rkey):
-    """Pick this round's message and its photo (same result on every refresh, new pick each round)."""
-    idx = random.Random(f"love_{rkey}").randrange(len(LOVE_NOTES))
+def win_number(code, rkey):
+    """0 for her first win in this room, 1 for her second, ... (the same round always gets the same number)."""
+    with LOCK:
+        room = ROOMS.get(code)
+        if room is None:
+            return 10**6
+        seq = room.setdefault("love_seq", {})
+        if rkey not in seq:
+            seq[rkey] = len(seq)
+        return seq[rkey]
+
+
+def pick_win_extras(rkey, win_no=None):
+    """Pick this round's message and its photo (same result on every refresh, new pick each round).
+    The first wins use FIRST_NOTES in order; later wins are random."""
+    if win_no is not None and win_no < len(FIRST_NOTES):
+        idx = FIRST_NOTES[win_no] - 1
+    else:
+        idx = random.Random(f"love_{rkey}").randrange(len(LOVE_NOTES))
     paired = NOTE_PHOTOS.get(idx + 1)
     clip = find_clip(paired) if paired else None
     if clip is None:
@@ -1167,7 +1186,7 @@ def game_view():
         elif w == p:
             show_result("win", "🏆 BINGO! You win!", rkey)
             if names[p].strip().lower() == SPECIAL_NAME:
-                note, clip = pick_win_extras(rkey)
+                note, clip = pick_win_extras(rkey, win_number(code, rkey))
                 if clip:
                     with st.container(key="win_clip"):
                         st.image(str(clip), width="stretch")
