@@ -274,6 +274,8 @@ LOVE_NOTES = [
     "You are such a beautiful combination of courage and tenderness, my love. So strong in spirit, so gentle at heart, and so wonderfully adorable in all the little ways that make you, you. ❤️",
     "I lost the game, so naturally, I'm claiming extra hugs as compensation.",
     "You are a little bit of sunshine, a little bit of magic, a whole lot of courage and an absolute sweetheart.",
+    "Even with all the Diwali celebrations today, talking to you was my favourite part. Honestly, it doesn't really matter what the day brings; talking to you is always something I look forward to.",
+    "There was something especially lovely about this Diwali, and I think having you as a part of it made everything feel a little warmer and sweeter. Even from miles away, you brought a kind of happiness to the day that I'll hold close for a long time. ❤️",
 ]
 
 
