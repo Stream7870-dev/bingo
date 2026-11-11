@@ -955,18 +955,37 @@ def play_sound(kind):
 
 
 # ---- stickers: storage, upload, sending ------------------------------------------------
-STICKER_DIR = Path(__file__).parent / "stickers"   # the sticker "space": any image dropped in here shows up too
-STICKER_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+STICKER_FOLDER_NAMES = {"stickers", "sticker"}   # folder next to this file; capital letters don't matter
+STICKER_EXT = {".png", ".jpg", ".jpeg", ".jfif", ".gif", ".webp", ".bmp"}
 MAX_STICKERS = 60            # most stickers kept in the library
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 
 
-def list_stickers():
-    """Sticker files in the library, oldest first."""
+def sticker_dirs():
+    """Existing sticker folders (Stickers, stickers, sticker ...), found regardless of capital letters."""
     try:
-        files = [f for f in STICKER_DIR.iterdir() if f.is_file() and f.suffix.lower() in STICKER_EXT]
+        return sorted(d for d in Path(__file__).parent.iterdir()
+                      if d.is_dir() and d.name.lower() in STICKER_FOLDER_NAMES)
     except OSError:
         return []
+
+
+def upload_dir():
+    dirs = sticker_dirs()
+    return dirs[0] if dirs else Path(__file__).parent / "stickers"
+
+
+def list_stickers():
+    """Sticker files in the library, oldest first."""
+    files, seen = [], set()
+    for d in sticker_dirs():
+        try:
+            for f in d.iterdir():
+                if f.is_file() and f.suffix.lower() in STICKER_EXT and f.name not in seen:
+                    seen.add(f.name)
+                    files.append(f)
+        except OSError:
+            pass
     return sorted(files, key=lambda f: (f.stat().st_mtime, f.name))
 
 
@@ -974,8 +993,11 @@ def sticker_path(name):
     """Safe lookup by file name (None if it is not in the library)."""
     if not name or Path(name).name != name:
         return None
-    f = STICKER_DIR / name
-    return f if f.is_file() and f.suffix.lower() in STICKER_EXT else None
+    for d in sticker_dirs():
+        f = d / name
+        if f.is_file() and f.suffix.lower() in STICKER_EXT:
+            return f
+    return None
 
 
 def normalize_sticker(data, size=256):
@@ -997,7 +1019,11 @@ def sticker_uri(path_str, mtime, size):
 
 
 def uri_for(path, size):
-    return sticker_uri(str(path), path.stat().st_mtime, size)
+    """Data URI for a sticker, or None if the file can't be read as a picture."""
+    try:
+        return sticker_uri(str(path), path.stat().st_mtime, size)
+    except Exception:
+        return None
 
 
 def add_sticker(data):
@@ -1011,8 +1037,9 @@ def add_sticker(data):
     except Exception:
         return "That doesn't look like a picture"
     try:
-        STICKER_DIR.mkdir(parents=True, exist_ok=True)
-        (STICKER_DIR / f"{secrets.token_hex(5)}.png").write_bytes(png)
+        target = upload_dir()
+        target.mkdir(parents=True, exist_ok=True)
+        (target / f"{secrets.token_hex(5)}.png").write_bytes(png)
     except OSError:
         return "Couldn't save the sticker on the server"
     return None
@@ -1071,7 +1098,8 @@ def bubble_html(m, p, room):
     who = "" if m["p"] == p else f'<span class="who">{html.escape(room["names"][m["p"]])}</span>'
     if m.get("sticker"):
         f = sticker_path(m["sticker"])
-        body = f'<img src="{uri_for(f, 256)}" alt="sticker">' if f else "🖼 sticker removed"
+        uri = uri_for(f, 256) if f else None
+        body = f'<img src="{uri}" alt="sticker">' if uri else "🖼 sticker removed"
         return f'<div class="bubble {cls} sticker">{who}{body}</div>'
     return f'<div class="bubble {cls}">{who}{html.escape(m.get("text", ""))}</div>'
 
@@ -1084,13 +1112,16 @@ def sticker_tray(code, p):
                          accept_multiple_files=True, key=f"stk_up_{ss.get('stk_n', 0)}",
                          on_change=handle_sticker_upload)
         if not stickers:
-            st.caption("No stickers yet. Upload your first one above.")
+            st.caption("No stickers found. Upload one above, or put pictures in a folder called "
+                       "`stickers` next to the app file (PNG, JPG, GIF, WEBP) and push it to GitHub.")
             return
         delete_mode = st.toggle("🗑 Delete mode", key="sticker_delete")
         for start in range(0, len(stickers), 4):
             cols = st.columns(4)
             for col, f in zip(cols, stickers[start:start + 4]):
-                col.markdown(f'<img class="sticker-thumb" src="{uri_for(f, 96)}" alt="">',
+                uri = uri_for(f, 96)
+                col.markdown(f'<img class="sticker-thumb" src="{uri}" alt="">' if uri
+                             else '<div class="sticker-thumb" style="text-align:center">⚠️</div>',
                              unsafe_allow_html=True)
                 if delete_mode:
                     col.button("🗑", key=f"stk_del_{f.name}", on_click=delete_sticker, args=(f.name,),
