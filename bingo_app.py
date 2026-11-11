@@ -10,10 +10,12 @@ import time
 import urllib.parse
 import urllib.request
 from functools import partial
+from io import BytesIO
 from pathlib import Path
 
 import streamlit as st
 import streamlit.components.v1 as components
+from PIL import Image  # installed together with Streamlit
 
 st.set_page_config(page_title="Bingo Online", page_icon="🎯", layout="centered")
 
@@ -138,6 +140,14 @@ st.markdown(
     .bubble.them { align-self: flex-start; background: #ffffff; border-bottom-left-radius: 3px; }
     .bubble .who { display: block; font-size: .7rem; font-weight: 800; color: #6b4a8f; }
     .chat-empty { margin: auto; color: #4b3668; font-size: .9rem; }
+
+    /* Stickers */
+    .st-key-chat_panel { max-height: 85vh; overflow-y: auto; }
+    .bubble.sticker { background: transparent; padding: 0; }
+    .bubble.sticker img { width: 120px; max-width: 100%; display: block; }
+    .bubble.sticker .who { margin-bottom: 2px; }
+    .st-key-sticker_tray { background: #f6eefb; border-radius: 12px; padding: .5rem; margin-top: .5rem; }
+    .sticker-thumb { width: 100%; max-width: 64px; aspect-ratio: 1; object-fit: contain; display: block; margin: 0 auto .25rem; }
 
     /* Music panel: song profile card + results */
     .st-key-music_panel { max-height: 85vh; overflow-y: auto; }
@@ -944,6 +954,154 @@ def play_sound(kind):
     )
 
 
+# ---- stickers: storage, upload, sending ------------------------------------------------
+STICKER_DIR = Path(__file__).parent / "stickers"   # the sticker "space": any image dropped in here shows up too
+STICKER_EXT = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+MAX_STICKERS = 60            # most stickers kept in the library
+MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+
+
+def list_stickers():
+    """Sticker files in the library, oldest first."""
+    try:
+        files = [f for f in STICKER_DIR.iterdir() if f.is_file() and f.suffix.lower() in STICKER_EXT]
+    except OSError:
+        return []
+    return sorted(files, key=lambda f: (f.stat().st_mtime, f.name))
+
+
+def sticker_path(name):
+    """Safe lookup by file name (None if it is not in the library)."""
+    if not name or Path(name).name != name:
+        return None
+    f = STICKER_DIR / name
+    return f if f.is_file() and f.suffix.lower() in STICKER_EXT else None
+
+
+def normalize_sticker(data, size=256):
+    """Any image -> small PNG (keeps transparency; animated GIFs become still)."""
+    img = Image.open(BytesIO(data))
+    if img.width * img.height > 25_000_000:
+        raise ValueError("Image is too large")
+    img = img.convert("RGBA")
+    img.thumbnail((size, size))
+    out = BytesIO()
+    img.save(out, "PNG", optimize=True)
+    return out.getvalue()
+
+
+@st.cache_data(show_spinner=False)
+def sticker_uri(path_str, mtime, size):
+    png = normalize_sticker(Path(path_str).read_bytes(), size)
+    return "data:image/png;base64," + base64.b64encode(png).decode()
+
+
+def uri_for(path, size):
+    return sticker_uri(str(path), path.stat().st_mtime, size)
+
+
+def add_sticker(data):
+    """Returns an error message, or None when the sticker was saved."""
+    if len(data) > MAX_UPLOAD_BYTES:
+        return "That file is over 5 MB"
+    if len(list_stickers()) >= MAX_STICKERS:
+        return f"The sticker space is full ({MAX_STICKERS}). Delete some first"
+    try:
+        png = normalize_sticker(data, 256)
+    except Exception:
+        return "That doesn't look like a picture"
+    try:
+        STICKER_DIR.mkdir(parents=True, exist_ok=True)
+        (STICKER_DIR / f"{secrets.token_hex(5)}.png").write_bytes(png)
+    except OSError:
+        return "Couldn't save the sticker on the server"
+    return None
+
+
+def handle_sticker_upload():
+    ss = st.session_state
+    key = f"stk_up_{ss.get('stk_n', 0)}"
+    errors, added = [], 0
+    for f in ss.get(key) or []:
+        err = add_sticker(f.getvalue())
+        if err:
+            errors.append(f"{f.name}: {err}")
+        else:
+            added += 1
+    ss["stk_n"] = ss.get("stk_n", 0) + 1       # new key = empty uploader again
+    if added:
+        st.toast(f"Added {added} sticker{'s' if added != 1 else ''} 😊")
+    for e in errors[:3]:
+        st.toast(e + " ❌")
+
+
+def send_sticker(code, p, name):
+    if not sticker_path(name):
+        st.toast("That sticker is gone ❌")
+        return
+    with LOCK:
+        room = ROOMS.get(code)
+        if room:
+            chat = room.setdefault("chat", [])
+            chat.append({"p": p, "sticker": name})
+            del chat[:-200]
+
+
+def pick_sticker(code, p, name):
+    send_sticker(code, p, name)
+    st.session_state["sticker_open"] = False
+
+
+def delete_sticker(name):
+    f = sticker_path(name)
+    if f:
+        try:
+            f.unlink()
+        except OSError:
+            st.toast("Couldn't delete that sticker ❌")
+
+
+def toggle_stickers():
+    st.session_state["sticker_open"] = not st.session_state.get("sticker_open", False)
+
+
+def bubble_html(m, p, room):
+    """One chat bubble (text or sticker)."""
+    cls = "me" if m["p"] == p else "them"
+    who = "" if m["p"] == p else f'<span class="who">{html.escape(room["names"][m["p"]])}</span>'
+    if m.get("sticker"):
+        f = sticker_path(m["sticker"])
+        body = f'<img src="{uri_for(f, 256)}" alt="sticker">' if f else "🖼 sticker removed"
+        return f'<div class="bubble {cls} sticker">{who}{body}</div>'
+    return f'<div class="bubble {cls}">{who}{html.escape(m.get("text", ""))}</div>'
+
+
+def sticker_tray(code, p):
+    ss = st.session_state
+    stickers = list_stickers()
+    with st.container(key="sticker_tray"):
+        st.file_uploader("Upload stickers", type=[e.lstrip(".") for e in sorted(STICKER_EXT)],
+                         accept_multiple_files=True, key=f"stk_up_{ss.get('stk_n', 0)}",
+                         on_change=handle_sticker_upload)
+        if not stickers:
+            st.caption("No stickers yet. Upload your first one above.")
+            return
+        delete_mode = st.toggle("🗑 Delete mode", key="sticker_delete")
+        for start in range(0, len(stickers), 4):
+            cols = st.columns(4)
+            for col, f in zip(cols, stickers[start:start + 4]):
+                col.markdown(f'<img class="sticker-thumb" src="{uri_for(f, 96)}" alt="">',
+                             unsafe_allow_html=True)
+                if delete_mode:
+                    col.button("🗑", key=f"stk_del_{f.name}", on_click=delete_sticker, args=(f.name,),
+                               use_container_width=True)
+                else:
+                    col.button("➤", key=f"stk_send_{f.name}", type="primary", on_click=pick_sticker,
+                               args=(code, p, f.name), use_container_width=True)
+        st.caption(f"{len(stickers)} / {MAX_STICKERS} stickers stored")
+# ---- end stickers -----------------------------------------------------------------------
+
+
 def submit_chat(code, p):
     send_message(code, p, st.session_state.get("chat_msg", ""))
 
@@ -1027,7 +1185,7 @@ def chat_widget(code, p, room):
     if not is_open and len(chat) > ss.get(toast_key, 0):
         new = [m for m in chat[ss.get(toast_key, 0):] if m["p"] == opp]
         if new:
-            st.toast(f"💬 {room['names'][opp]}: {new[-1]['text'][:60]}")
+            st.toast(f"💬 {room['names'][opp]}: {(new[-1].get('text') or '🖼 Sticker')[:60]}")
         ss[toast_key] = len(chat)
 
     label = "✖" if is_open else ("💬" + (f" {unread}" if unread else ""))
@@ -1037,10 +1195,7 @@ def chat_widget(code, p, room):
     if is_open:
         with st.container(key="chat_panel"):
             bubbles = "".join(
-                f'<div class="bubble {"me" if m["p"] == p else "them"}">'
-                + ('' if m["p"] == p else f'<span class="who">{html.escape(room["names"][m["p"]])}</span>')
-                + f'{html.escape(m["text"])}</div>'
-                for m in reversed(chat)
+                bubble_html(m, p, room) for m in reversed(chat[-60:])
             ) or '<div class="chat-empty">No messages yet — say hi 👋</div>'
             st.markdown(
                 f'<div class="chat-title">💬 Chat with {html.escape(room["names"][opp])}</div>'
@@ -1053,6 +1208,10 @@ def chat_widget(code, p, room):
                               label_visibility="collapsed")
                 c2.form_submit_button("➤", type="primary", use_container_width=True,
                                       on_click=submit_chat, args=(code, p))
+            st.button("🙂 Hide stickers" if ss.get("sticker_open") else "🙂 Stickers", key="sticker_toggle",
+                      on_click=toggle_stickers, use_container_width=True)
+            if ss.get("sticker_open"):
+                sticker_tray(code, p)
 
 
 def leave():
